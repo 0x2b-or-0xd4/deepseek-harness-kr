@@ -2,10 +2,12 @@
 
 [DeepSeek Harness](https://github.com/deepseek-ai) 0.2.1-rc.5를 한국어로 쓰고, 화면 안에 살아 움직이는 Live2D 버튜버 **DeepSeek짱**을 더하는 패치와 도구입니다.
 
+![DeepSeek짱 소개 영상](docs/preview.gif)
+
 <details>
 <summary><b>소개 영상</b></summary>
 
-![DeepSeek짱 소개 영상](docs/preview.gif)
+https://github.com/user-attachments/assets/7e7a96cc-efc8-416d-89a0-f574fdcda690
 
 </details>
 
