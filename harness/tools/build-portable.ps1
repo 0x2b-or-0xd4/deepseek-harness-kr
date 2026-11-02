@@ -25,6 +25,8 @@ start "" "%ROOT%Harness\DeepSeek Harness.exe" --user-data-dir="%ROOT%data\electr
 '@
 [IO.File]::WriteAllText("$Out\Start-DeepSeek-Harness.cmd", ($cmd -replace "`r?`n", "`r`n"), [Text.Encoding]::ASCII)
 
+# 아이콘 있는 실행기 (launcher\Launcher.cs 를 csc 로 빌드한 것)
+Copy-Item "$PSScriptRoot\launcher\DeepSeek-Harness.exe" "$Out\DeepSeek-Harness.exe"
 Copy-Item "$PSScriptRoot\portable-README.txt" "$Out\README.txt"
 Copy-Item "$PSScriptRoot\portable-NOTICE.txt" "$Out\NOTICE.txt"
 $size = (Get-ChildItem $Out -Recurse -File | Measure-Object Length -Sum).Sum

@@ -8,9 +8,10 @@ DeepSeek Harness 0.2.1-rc.5에 한국어 화면, 파스텔 테마, Live2D 인앱
 실행
 ----
 1. 압축을 원하는 곳에 풉니다. (경로에 한글·공백이 있어도 됩니다)
-2. Start-DeepSeek-Harness.cmd 를 더블클릭합니다.
+2. DeepSeek-Harness.exe 를 더블클릭합니다. (DeepSeek짱 아이콘, 바로가기를 만들어 써도 됩니다)
+   - 같은 일을 하는 Start-DeepSeek-Harness.cmd 도 있습니다.
    - Harness\DeepSeek Harness.exe 를 직접 실행하면 설정이 PC의 기본 위치에 저장되니
-     꼭 Start-DeepSeek-Harness.cmd 로 켜 주세요.
+     꼭 DeepSeek-Harness.exe(또는 .cmd)로 켜 주세요.
 3. 처음 켜면 바로 본 화면이 열립니다. 입력창 오른쪽 "모델을 고르세요" 또는 왼쪽 아래 "더 보기 → 설정"에서
    DeepSeek API 키를 넣거나 계정으로 로그인하세요. (로컬 모델 서버는 아래 "로컬 모델 연결" 참고)
 
