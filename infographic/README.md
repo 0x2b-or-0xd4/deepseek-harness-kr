@@ -6,5 +6,5 @@
 - `DeepSeekHarness_인포그래픽.mp4` : 최종 영상 (57초, 1920×1080)
 - `stage.js` : 캐릭터 무대 (Harness 인앱 펫과 같은 모델·3판 움직임). `node build-stage.cjs`로 다시 만듦
 - `assets/` : 저장소에 없음. `../harness/overlay/dsh/node_modules/@deepseek-ai/dsh-web-frontend/dist/assets/dsc/` 를 이 폴더의 `assets/` 로 복사
-- 렌더링: `"<펫 폴더>\pet\node_modules\electron\dist\electron.exe" record.cjs index.html 57 frames`
+- 렌더링: `npx electron@45 record.cjs index.html 57 frames` (Electron 45, 프레임을 frames/ 에 저장)
 - 영상: `ffmpeg -framerate 30 -i frames/f%05d.jpg -c:v libx264 -crf 16 -pix_fmt yuv420p out.mp4`
