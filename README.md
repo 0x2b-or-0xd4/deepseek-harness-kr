@@ -2,12 +2,19 @@
 
 [DeepSeek Harness](https://github.com/deepseek-ai) 0.2.1-rc.5를 한국어로 쓰고, 화면 안에 살아 움직이는 Live2D 버튜버 **DeepSeek짱**을 더하는 패치와 도구입니다.
 
+## 소개 영상
+
+[![DeepSeek짱 소개 영상 미리보기](docs/preview.gif)](infographic/DeepSeekHarness_인포그래픽.mp4)
+
+▶ 전체 영상(57초): [`infographic/DeepSeekHarness_인포그래픽.mp4`](infographic/DeepSeekHarness_인포그래픽.mp4) — 화면 캡처 없이 캐릭터를 직접 렌더링해 만든 인포그래픽
+
 ## 구성
 
 | 폴더 | 내용 |
 |---|---|
 | `harness/overlay/` | 원본 Harness(app.asar)에서 바뀌거나 추가된 파일 314개 (한국어 문구, 파스텔 테마, 인앱 캐릭터, 업데이트 끔 등) |
 | `harness/tools/` | 원본에 overlay를 덮어쓰는 스크립트, 포터블 빌드 스크립트, 분석 도구 |
+| `infographic/` | 소개 영상 최종본과 제작 파일 |
 
 ## 인앱 캐릭터가 하는 일
 
