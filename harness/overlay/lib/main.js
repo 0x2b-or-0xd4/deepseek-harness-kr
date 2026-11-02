@@ -8570,7 +8570,8 @@ const WELCOME_IPC = {
 * @returns true only when neither authentication route is configured.
 */
 function needsWelcome(authentication) {
-	return !authentication.loggedIn && !authentication.hasApiKey;
+	// LOCAL: 환영 창을 띄우지 않음 (로그인·API 키는 설정 화면에서). 원래: !loggedIn && !hasApiKey
+	return false;
 }
 //#endregion
 //#region lib/types/welcome-window.js

@@ -11,8 +11,8 @@ DeepSeek Harness 0.2.1-rc.5에 한국어 화면, 파스텔 테마, Live2D 인앱
 2. Start-DeepSeek-Harness.cmd 를 더블클릭합니다.
    - Harness\DeepSeek Harness.exe 를 직접 실행하면 설정이 PC의 기본 위치에 저장되니
      꼭 Start-DeepSeek-Harness.cmd 로 켜 주세요.
-3. 처음 켜면 모델 연결 화면이 나옵니다. DeepSeek API 키를 넣거나 계정으로 로그인하세요.
-   (로컬 모델 서버를 쓰려면 아래 "로컬 모델 연결" 참고)
+3. 처음 켜면 바로 본 화면이 열립니다. 입력창 오른쪽 "모델을 고르세요" 또는 왼쪽 아래 "더 보기 → 설정"에서
+   DeepSeek API 키를 넣거나 계정으로 로그인하세요. (로컬 모델 서버는 아래 "로컬 모델 연결" 참고)
 
 필요한 것: Windows 10/11 64비트. 따로 설치할 프로그램은 없습니다.
 
