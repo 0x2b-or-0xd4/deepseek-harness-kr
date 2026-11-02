@@ -1,0 +1,1 @@
+{ "name": "deepseekchan-harness-tools", "private": true, "description": "DeepSeek Harness 한국어화·인앱 펫 패치 도구", "dependencies": { "@electron/asar": "3.2.17" } }

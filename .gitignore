@@ -1,0 +1,10 @@
+harness/tools/node_modules/
+*.asar
+*.zip
+*.mp4
+frames/
+data/
+대사.md
+대사/
+대사_검사결과.txt
+dist/
