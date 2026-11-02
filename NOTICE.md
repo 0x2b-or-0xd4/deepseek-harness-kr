@@ -14,7 +14,6 @@ MIT License.
 
 ## Live2D 모델 (DeepSeek짱)
 `harness/overlay/.../assets/dsc/model/` — 오픈소스로 공개된 모델입니다.
-(출처: TODO 원작자·배포 링크와 라이선스를 적어 주세요)
 
 ## 배경 그림
 `.../assets/dsc/wallpaper.png` — 저장소 작성자가 AI로 생성한 그림입니다.
