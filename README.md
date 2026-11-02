@@ -40,3 +40,9 @@
 
 - 이 저장소의 코드: MIT (`LICENSE`)
 - 포함된 제3자 구성 요소와 그림: `NOTICE.md`
+
+## 만든 사람
+
+- [@noire113-dev](https://github.com/noire113-dev) — 기획, 테스트, 배경 그림
+- [Claude](https://claude.ai) (Anthropic, Claude Code) — 한국어화·인앱 캐릭터 코드, 패치·빌드 도구, 소개 영상 제작
+- Live2D 모델 원작: Kamiya_Ryoko (VGen @KAMIYA) — `NOTICE.md` 참고
