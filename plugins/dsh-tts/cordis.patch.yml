@@ -1,0 +1,40 @@
+# dsh-tts — 옵트인 음성 플러그인.
+# Host half: GET /dsh-tts/state + POST /dsh-tts/speak, a streaming proxy to an
+# OpenAI-compatible /audio/speech endpoint. The API key lives in the env var
+# named by openai.apiKeyEnv; it never reaches the browser.
+# Client half: plays the PCM stream from a "dsc:say" event and drives
+# window.__dsc.voice({speaking, level, until}) from the audio level.
+#
+# Disabled by default: no routes are registered and the client attaches nothing.
+
+- insert:
+    - id: tts
+      name: dsh-tts
+      config:
+        enabled: false
+        openai:
+          baseUrl: "https://api.openai.com/v1"
+          model: "gpt-4o-mini-tts"
+          voice: "alloy"
+          speed: 1.0
+          apiKeyEnv: "OPENAI_API_KEY"  # ""이면 인증 없이 요청(무인증 로컬 서버)
+          headers: {}
+          timeoutMs: 30000
+          extraBody: {}         # 모델 전용 필드(비이식성): ref_audio/ref_text 등. 표준 필드가 우선
+          textPrefix: ""        # 모델 전용 연출 접두사(비이식성). Drama 3: "[밝고 장난기 있는 20대 여성] "
+        stream:
+          enabled: true
+          pcmSampleRate: 24000
+        voiceLines:
+          reactions: true
+          status: false
+          mutters: false
+          others: true
+        cache:
+          enabled: true
+          maxEntries: 200
+          ttlMs: 604800000
+          maxCacheBytes: 33554432
+        limits:
+          maxCharsPerLine: 300
+          maxBytes: 16777216
