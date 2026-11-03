@@ -136,6 +136,25 @@ npm test
 
 되돌리기: 백업한 `app.asar.orig`를 `app.asar`로 되돌리면 됩니다.
 
+### ASAR 패치 업데이트
+
+ASAR 패치는 자동으로 업데이트되지 않습니다. 새 버전이 나오면 패치를 다시 만들어 덮어씁니다.
+
+1. Harness를 종료합니다.
+2. 이 저장소의 최신 버전을 받습니다(`git pull`, 또는 GitHub에서 zip을 다시 받기).
+3. 위의 3~4단계(패치 만들기 → `resources\`에 덮어쓰기)만 다시 합니다.
+
+**2단계(원본 백업)는 다시 하지 마세요.** 이미 패치된 `app.asar`로 `app.asar.orig`를 덮어쓰면 원본이 사라집니다. 패치는 항상 처음 백업한 원본으로 만듭니다.
+
+### 플러그인 방식으로 바꾸기
+
+앞으로 [업데이트](#업데이트)를 명령 한 줄로 하려면 플러그인 방식으로 바꿀 수 있습니다.
+
+1. Harness를 종료하고, 백업한 `app.asar.orig`를 `app.asar`로 되돌립니다.
+2. Harness를 켜고 [플러그인으로 설치](#플러그인으로-설치-권장)를 따라 설치합니다.
+
+패치를 그대로 둔 채 플러그인을 설치하면 캐릭터가 두 개 표시됩니다. 대화 기록과 설정은 사용자 폴더에 저장되므로 `app.asar`를 바꿔도 유지됩니다.
+
 ## 적용 방법 (macOS, Apple silicon)
 
 overlay는 Windows판과 macOS판에 공통으로 쓰입니다. 두 원본 asar에서 overlay가 덮어쓰는 파일들은 CSS 클래스 해시와 빌드 경로 주석만 다릅니다.
@@ -153,13 +172,26 @@ overlay는 Windows판과 macOS판에 공통으로 쓰입니다. 두 원본 asar�
    ```
    원본 백업(`app.asar.orig`, `app-update.yml.orig`, `Info.plist.orig`, 처음 한 번만) → overlay 적용 → `Info.plist`의 `ElectronAsarIntegrity` 해시 갱신 → 자동 업데이트 끔 → ad-hoc 재서명 → quarantine 속성 제거 순서로 진행합니다. 다시 실행해도 항상 원본에서 새로 만듭니다.
 
+업데이트: 이 저장소의 최신 버전을 받은 뒤 Harness를 종료하고 `sh apply-macos.sh`를 다시 실행합니다. 스크립트는 처음 백업한 원본에서 새로 만들기 때문에 백업을 다시 할 필요가 없습니다.
+
 패치한 앱은 DeepSeek 공식 서명 대신 로컬 ad-hoc 서명을 쓰므로 Gatekeeper의 공증 확인을 거치지 않습니다.
 
 되돌리기: `Contents/Resources/app.asar.orig` → `app.asar`, `Contents/Resources/app-update.yml.orig` → `app-update.yml`, `Contents/Info.plist.orig` → `Info.plist`로 되돌린 뒤 `codesign --force --deep -s - "/Applications/DeepSeek Harness.app"`를 실행합니다.
 
 ## 포터블(설치 없이 실행)
 
-`harness/tools/build-portable.ps1`이 패치된 설치본을 복사해 `Start-DeepSeek-Harness.cmd`로 실행되는 포터블 폴더를 만듭니다. 설정·대화 기록은 폴더 안 `data\`에 저장됩니다(`DSH_HOME`, `--user-data-dir`). 완성본은 Releases에 올립니다.
+`harness/tools/build-portable.ps1`이 패치된 설치본을 복사해 `Start-DeepSeek-Harness.cmd`로 실행되는 포터블 폴더를 만듭니다. 설정·대화 기록은 폴더 안 `data\`에 저장됩니다(`DSH_HOME`, `--user-data-dir`). 완성본은 [Releases](https://github.com/noire113-dev/deepseek-harness-kr/releases)에 올립니다.
+
+### 포터블 업데이트
+
+포터블은 자동으로 업데이트되지 않습니다. 설정과 대화 기록은 `data\` 폴더에만 있으므로, 새 버전으로 바꿀 때 이 폴더만 옮기면 됩니다.
+
+1. 포터블 Harness를 종료합니다.
+2. [Releases](https://github.com/noire113-dev/deepseek-harness-kr/releases/latest)에서 최신 `DeepSeekChan-Harness-Portable.zip`을 받아 새 폴더에 풉니다.
+3. 예전 포터블 폴더의 `data\` 폴더를 새 폴더로 옮깁니다(`DeepSeek-Harness.exe`와 같은 위치).
+4. 새 폴더의 `DeepSeek-Harness.exe`로 실행합니다. 문제가 없으면 예전 폴더는 지워도 됩니다.
+
+포터블도 안쪽은 ASAR 패치 방식이라, 플러그인을 함께 설치하면 캐릭터가 두 개 표시됩니다.
 
 ## 라이선스
 
