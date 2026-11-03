@@ -53,7 +53,7 @@ DSH **0.2.1-rc.5** 이상의 Desktop 앱과 브라우저 Web UI에서 사용할 
 
 - Live2D 캐릭터의 표정·시선·터치 반응과 모음에 맞춘 입 모양
 - 작업 상태·추론 문구에 반응하는 말풍선
-- 파스텔 테마와 밝은 모드
+- 파스텔 테마 (Harness의 밝은 모드·다크 모드 설정을 그대로 따름)
 - UI 번역 54개 네임스페이스를 제공하는 한국어 언어팩
 - 별도 옵트인 플러그인 `dsh-tts`와의 음성·입 모양 연동
 
@@ -64,7 +64,7 @@ DSH **0.2.1-rc.5** 이상의 Desktop 앱과 브라우저 Web UI에서 사용할 
 | 설정 | 기능 |
 |---|---|
 | 캐릭터와 말풍선 | Live2D 캐릭터, 표정·터치 반응과 말풍선 |
-| 파스텔 테마 | 배경·색상·입력창 스타일과 밝은 모드 |
+| 파스텔 테마 | 배경·색상·입력창 스타일. 밝은 모드와 다크 모드 모두 지원 (모드는 Harness 설정 → 모양에서 선택) |
 | 한국어 언어팩 | 한국어 UI 번역 등록 |
 
 기본값은 모두 활성화이며, 변경 사항은 즉시 적용되고 현재 프로필에 저장됩니다. 한국어 표시 언어는 **Settings → General → Language**에서 선택합니다.
@@ -159,5 +159,6 @@ overlay는 Windows판과 macOS판에 공통으로 쓰입니다. 두 원본 asar�
 - [@conankun](https://github.com/conankun) — 말풍선 TTS와 오디오 기반 입 모양 플러그인 `plugins/dsh-tts` ([#2](https://github.com/noire113-dev/deepseek-harness-kr/pull/2))
 - [@shortstories](https://github.com/shortstories) — Harness 플러그인 메뉴에서 바로 설치하는 방식, 캐릭터·테마·한국어 개별 설정 ([#3](https://github.com/noire113-dev/deepseek-harness-kr/pull/3))
 - [@TraceofLight](https://github.com/TraceofLight) — macOS(Apple silicon) 적용 스크립트 ([#4](https://github.com/noire113-dev/deepseek-harness-kr/pull/4))
+- [@iwannagit](https://github.com/iwannagit) — 파스텔 테마 다크 모드 지원 ([#5](https://github.com/noire113-dev/deepseek-harness-kr/pull/5))
 
 좋은 기능을 보내 주신 분들께 감사드립니다!
