@@ -49,6 +49,23 @@ DSH **0.2.1-rc.5** 이상의 Desktop 앱과 브라우저 Web UI에서 사용할 
 앱에서 설치하면 현재 앱이 사용하는 프로필에 적용됩니다. 별도의 Node/npm 설치나 전용 패치 스크립트 실행, `app.asar` 교체는 필요하지 않습니다.
 플러그인은 DSH 사용자 프로필에 설치되므로 앱 업데이트가 설치 파일을 교체해도 유지됩니다. 비활성화하면 캐릭터·테마·번역 등록이 해제됩니다.
 
+### 업데이트
+
+GitHub 주소로 설치한 플러그인은 설치한 시점의 커밋에 고정되며, 자동으로 업데이트되지 않습니다. Harness의 Plugins 화면에는 공식 플러그인만 업데이트 버튼이 나오므로, 아래 명령으로 최신 버전을 받습니다.
+
+1. Harness를 종료합니다.
+2. 명령 프롬프트에서 실행합니다.
+
+   ```bat
+   "%LOCALAPPDATA%\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop update deepseek-harness-kr
+   ```
+
+   PowerShell에서는 `& "$env:LOCALAPPDATA\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop update deepseek-harness-kr`로 실행합니다. 브라우저 Web UI에 설치했다면 `--profile desktop`을 `--profile web`으로 바꿉니다.
+
+3. Harness를 다시 실행합니다.
+
+캐릭터·테마·한국어 설정은 프로필에 따로 저장되므로 업데이트해도 유지됩니다. 명령줄을 쓰기 어렵다면 **Plugins**에서 이 플러그인을 제거한 뒤 같은 GitHub 주소로 다시 추가해도 최신 버전이 설치되고, 이때도 설정은 유지됩니다.
+
 ### 지원 기능
 
 - Live2D 캐릭터의 표정·시선·터치 반응과 모음에 맞춘 입 모양
@@ -88,6 +105,7 @@ npm test
 빌드는 `assets/`의 캐릭터 코드와 `plugin/locales.ko.json`으로 플러그인 클라이언트를 생성합니다. 설정 스키마는 DSH의 `@deepseek-ai/schemastery`를 사용합니다.
 빌드된 `lib/client.js`와 `assets/`를 저장소에 포함하므로 Git 주소로 설치할 때 빌드 스크립트를 실행하지 않습니다.
 캐릭터 코드·번역·자산을 수정한 뒤에는 `npm run build`를 실행하고 생성물도 함께 커밋하세요.
+사용자에게 나가는 변경이면 `package.json`의 `version`도 올려 주세요. Plugins 화면의 버전 표시로 새 버전인지 구분할 수 있습니다.
 
 ## 말풍선 음성 (TTS, 옵트인)
 
