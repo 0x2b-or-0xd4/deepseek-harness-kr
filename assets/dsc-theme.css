@@ -1,0 +1,3 @@
+/* Shared stylesheet entry for the legacy ASAR patch. */
+@import url("./theme.css");
+@import url("./character.css");
