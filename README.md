@@ -19,6 +19,7 @@ https://github.com/user-attachments/assets/7e7a96cc-efc8-416d-89a0-f574fdcda690
 | `assets/` | 플러그인과 ASAR 패치가 함께 사용하는 캐릭터 코드·Live2D 모델·테마·배경 |
 | `harness/overlay/` | 원본 Harness(app.asar)에 적용하는 한국어화·데스크톱 패치 파일 |
 | `harness/tools/` | 원본에 overlay를 덮어쓰는 스크립트(Windows `apply-overlay.cjs`, macOS `apply-macos.sh`), 포터블 빌드 스크립트, 분석 도구 |
+| `plugins/dsh-tts/` | 말풍선 대사를 음성으로 읽어 주는 옵트인 TTS 플러그인 |
 | `infographic/` | 소개 영상 최종본과 제작 파일 |
 
 ## 인앱 캐릭터가 하는 일
@@ -28,6 +29,7 @@ https://github.com/user-attachments/assets/7e7a96cc-efc8-416d-89a0-f574fdcda690
 - 말풍선 글자의 모음(한글 ㅏㅔㅣㅗㅜ, 영어 a·e·i·o·u)에 맞춘 입 모양
 - 클릭 부위별 반응(머리 쓰다듬기 등), 마우스 시선 따라가기
 - 한국어·영어 화면 모두 지원
+- (선택) 말풍선 대사를 음성으로 읽고, 소리 크기에 맞춰 입을 움직임 — [말풍선 음성](#말풍선-음성-tts-옵트인) 참고
 
 ## 플러그인으로 설치 (권장)
 
@@ -87,6 +89,18 @@ npm test
 빌드된 `lib/client.js`와 `assets/`를 저장소에 포함하므로 Git 주소로 설치할 때 빌드 스크립트를 실행하지 않습니다.
 캐릭터 코드·번역·자산을 수정한 뒤에는 `npm run build`를 실행하고 생성물도 함께 커밋하세요.
 
+## 말풍선 음성 (TTS, 옵트인)
+
+`plugins/dsh-tts`는 캐릭터가 말풍선에 띄우는 대사를 TTS로 읽어 주는 별도 플러그인입니다.
+
+- OpenAI 호환 `/audio/speech` API로 음성을 스트리밍 재생하고, 소리 크기(RMS)에 맞춰 캐릭터 입을 움직입니다. 음소 단위 정밀 립싱크는 아직 지원하지 않습니다.
+- 기본값은 **꺼짐**입니다. 꺼져 있으면 외부로 아무 요청도 보내지 않습니다.
+- 켜려면 `plugins/dsh-tts/cordis.patch.yml` 설정에서 `enabled: true`로 바꾸고, API 키를 환경변수(기본 `OPENAI_API_KEY`)로 넣습니다. 키는 호스트 환경변수에만 두고 화면 쪽으로 넘기지 않습니다.
+- 대사 종류별(반응·상태·혼잣말 등) 켜고 끄기, 보이스·모델·캐시 설정을 지원합니다.
+- TTS가 꺼져 있거나 실패해도 말풍선은 평소대로 표시됩니다.
+
+자세한 설정과 라우트 설명은 [`plugins/dsh-tts/README.md`](plugins/dsh-tts/README.md)를 참고하세요.
+
 ## 기존 적용 방법 (ASAR 패치, 이전 방식)
 
 `apply-overlay.cjs`는 `harness/overlay/`의 패치 파일과 공통 `assets/`를 함께 적용합니다.
@@ -109,7 +123,10 @@ npm test
 overlay는 Windows판과 macOS판에 공통으로 쓰입니다. 두 원본 asar에서 overlay가 덮어쓰는 파일들은 CSS 클래스 해시와 빌드 경로 주석만 다릅니다.
 
 1. [공식 다운로드](https://www.deepseek.com/en/download/)에서 macOS용 DeepSeek Harness 0.2.1-rc.5를 받아 `/Applications`에 설치하고, 한 번 실행한 뒤 종료
-2. 패치 적용
+2. 준비
+   - Node.js가 필요합니다. 없으면 `brew install node` 등으로 설치합니다.
+   - 스크립트를 실행할 터미널 앱(터미널, iTerm 등)에 **시스템 설정 → 개인정보 보호 및 보안 → 앱 관리** 권한을 켭니다. 꺼져 있으면 macOS가 `/Applications` 안의 앱 수정을 막아 `cp: ... app.asar.orig: Operation not permitted`로 멈춥니다. 권한을 켠 뒤 터미널을 다시 열고 실행하세요.
+3. 패치 적용
    ```
    cd harness/tools
    npm install
@@ -136,3 +153,11 @@ overlay는 Windows판과 macOS판에 공통으로 쓰입니다. 두 원본 asar�
 - [@noire113-dev](https://github.com/noire113-dev) — 기획, 테스트, 배경 그림
 - [Claude](https://claude.ai) (Anthropic, Claude Code) — 한국어화·인앱 캐릭터 코드, 패치·빌드 도구, 소개 영상 제작
 - Live2D 모델 원작: Kamiya_Ryoko (VGen @KAMIYA) — `NOTICE.md` 참고
+
+### 기여해 주신 분
+
+- [@conankun](https://github.com/conankun) — 말풍선 TTS와 오디오 기반 입 모양 플러그인 `plugins/dsh-tts` ([#2](https://github.com/noire113-dev/deepseek-harness-kr/pull/2))
+- [@shortstories](https://github.com/shortstories) — Harness 플러그인 메뉴에서 바로 설치하는 방식, 캐릭터·테마·한국어 개별 설정 ([#3](https://github.com/noire113-dev/deepseek-harness-kr/pull/3))
+- [@TraceofLight](https://github.com/TraceofLight) — macOS(Apple silicon) 적용 스크립트 ([#4](https://github.com/noire113-dev/deepseek-harness-kr/pull/4))
+
+좋은 기능을 보내 주신 분들께 감사드립니다!
