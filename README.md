@@ -60,7 +60,8 @@ DSH **0.2.1-rc.5** 이상의 Desktop 앱과 브라우저 Web UI에서 사용할 
 
 업데이트 칸은 GitHub 주소로 설치한 경우에만 동작합니다. 포크에서 설치했다면 그 포크의 최신 버전을 확인합니다.
 
-**0.1.2 이하에서 처음 한 번:** 이 버전에는 업데이트 칸이 없습니다. **Plugins**에서 이 플러그인을 제거한 뒤 같은 GitHub 주소로 다시 추가하면 최신 버전이 설치되고, 설정은 유지됩니다. 또는 Harness를 종료하고 명령 프롬프트에서 아래 명령을 실행해도 됩니다(Web UI라면 `--profile web`).
+**0.1.2 이하에서 처음 한 번:** 이 버전에는 업데이트 칸이 없습니다. **Plugins**에서 이 플러그인을 제거한 뒤 같은 GitHub 주소로 다시 추가하면 최신 버전이 설치되고, 설정은 유지됩니다. 또는 Harness를 종료하고 명령 프롬프트에서 아래 명령을 실행해도 됩니다(Web UI라면 `--profile web`). 
+(이 안내는 0.2까지 유지될 예정입니다.)
 
 ```bat
 "%LOCALAPPDATA%\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop update deepseek-harness-kr
