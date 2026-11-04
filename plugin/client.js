@@ -120,10 +120,182 @@ function startCharacter(life) {
   mountCharacter(life)
 }
 
-function settingsPage(ctx, form) {
+// ---------- 플러그인 업데이트 ----------
+// 설치 주소(GitHub)의 package.json 버전과 설치된 버전을 비교하고, Harness 플러그인 관리자의
+// installBundle(설치할 때와 같은 기능)을 같은 설치 주소로 다시 불러 최신 커밋을 받는다.
+
+// GitHub 설치 주소 → { owner, repo, ref }. GitHub이 아니면 null.
+function githubSource(spec) {
+  if (typeof spec !== 'string') return null
+  const text = spec.trim()
+  const short = text.match(/^github:([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:#(.+))?$/i)
+  const full = text.match(/^(?:git\+)?(?:https?:\/\/|ssh:\/\/git@|git@)github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?(?:#(.+))?$/i)
+  const m = short || full
+  return m ? { owner: m[1], repo: m[2], ref: m[3] || null } : null
+}
+
+// "1.2.3" 형식 비교. 앞이 크면 양수. 뒤에 붙은 -rc 등은 같은 번호의 정식 버전보다 낮게 본다.
+function compareVersions(a, b) {
+  const parse = (v) => {
+    const [core, pre] = String(v ?? '').trim().replace(/^v/i, '').split('-', 2)
+    return { nums: core.split('.').map((n) => parseInt(n, 10) || 0), pre: pre ?? null }
+  }
+  const x = parse(a), y = parse(b)
+  for (let i = 0; i < Math.max(x.nums.length, y.nums.length, 3); i++) {
+    const d = (x.nums[i] ?? 0) - (y.nums[i] ?? 0)
+    if (d) return d
+  }
+  if (x.pre === y.pre) return 0
+  if (x.pre === null) return 1
+  if (y.pre === null) return -1
+  return x.pre < y.pre ? -1 : 1
+}
+
+const PENDING_KEY = 'deepseek-harness-kr:update'
+const browserStorage = {
+  read() { try { return JSON.parse(window.localStorage.getItem(PENDING_KEY) || 'null') } catch { return null } },
+  write(value) { try { window.localStorage.setItem(PENDING_KEY, JSON.stringify(value)) } catch {} },
+  clear() { try { window.localStorage.removeItem(PENDING_KEY) } catch {} },
+}
+
+function createUpdater({ fetch: fetchImpl = (...args) => window.fetch(...args), storage = browserStorage, now = () => Date.now() } = {}) {
+  const listeners = new Set()
+  let manager = null, generation = 0
+  let snapshot = { phase: 'unavailable' }
+  const set = (patch) => { snapshot = { ...snapshot, ...patch }; for (const fn of [...listeners]) fn() }
+  const message = (error) => (error && (error.message || error.code || String(error))) || ''
+  const failure = (value) => [value?.error?.code, value?.error?.diagnostic].filter(Boolean).join(': ') || 'failed'
+  // 이전 화면이 시작한 업데이트(자기 자신을 지웠다 다시 설치)가 끝나 새 버전이 뜬 경우 결과를 이어받는다.
+  const resume = async (mine) => {
+    const pending = storage.read()
+    if (!pending || typeof pending.requestId !== 'string') return false
+    if (now() - (pending.at || 0) > 15 * 60 * 1000) { storage.clear(); return false }
+    if (snapshot.current && pending.to && compareVersions(snapshot.current, pending.to) >= 0) {
+      storage.clear(); set({ phase: 'updated', from: pending.from, error: '' }); return true
+    }
+    const waited = await manager.waitForInstall?.(pending.requestId)
+    if (mine !== generation) return true
+    if (waited?.ok && waited.value) {
+      storage.clear()
+      const v = waited.value
+      set(v.application === 'failed' ? { phase: 'update-failed', error: failure(v) } : { phase: 'updated', from: pending.from, error: '' })
+      return true
+    }
+    storage.clear()
+    return false
+  }
+  const check = async () => {
+    const mine = ++generation
+    if (!manager) { set({ phase: 'unavailable' }); return }
+    set({ phase: 'checking', error: '' })
+    try {
+      const listed = await manager.listBundles()
+      if (mine !== generation) return
+      if (!listed?.ok) throw new Error(message(listed?.error) || 'listBundles failed')
+      const row = listed.value.find((item) => item.name === PLUGIN_ID)
+      const current = row?.version ?? null, source = row?.source ?? null
+      const gh = githubSource(source)
+      if (!gh) { set({ phase: 'unsupported', current, latest: null, source }); return }
+      if (gh.ref && /^[0-9a-f]{7,40}$/i.test(gh.ref)) { set({ phase: 'pinned', current, latest: null, source }); return }
+      const url = `https://raw.githubusercontent.com/${gh.owner}/${gh.repo}/${encodeURIComponent(gh.ref || 'HEAD')}/package.json`
+      const response = await fetchImpl(url, { cache: 'no-store' })
+      if (mine !== generation) return
+      if (!response.ok) throw new Error('HTTP ' + response.status)
+      const latest = (await response.json())?.version
+      if (mine !== generation) return
+      if (typeof latest !== 'string') throw new Error('no version in package.json')
+      set({ current, latest, source })
+      if (await resume(mine)) return
+      if (mine !== generation) return
+      set({ phase: compareVersions(latest, current) > 0 ? 'available' : 'current' })
+    } catch (error) {
+      if (mine === generation) set({ phase: 'check-failed', error: message(error) })
+    }
+  }
+  const settle = (value) => {
+    if (value.application === 'applied' || value.application === 'overridden') set({ phase: 'updated', from: snapshot.current })
+    else if (value.application === 'restart-required') set({ phase: 'restart' })
+    else if (value.application === 'cancelled') set({ phase: 'available', error: 'cancelled' })
+    else set({ phase: 'update-failed', error: failure(value) })
+  }
+  // 1단계: 확인 요청
+  const update = () => { if (manager && snapshot.phase === 'available' && snapshot.source) set({ phase: 'confirm', error: '' }) }
+  const cancel = () => { if (snapshot.phase === 'confirm') set({ phase: 'available' }) }
+  // 2단계: 실제 업데이트. 먼저 같은 주소로 다시 설치하고, Harness가 '이미 설치됨'으로 막으면
+  // 공식 플러그인 업데이트와 같은 방식(제거 → 다시 설치)으로 진행한다. 설정은 프로필에 따로 남는다.
+  const confirm = async () => {
+    if (!manager || snapshot.phase !== 'confirm' || !snapshot.source) return
+    const mine = ++generation, pm = manager, source = snapshot.source
+    const requestId = PLUGIN_ID + '-update-' + now()
+    set({ phase: 'updating', error: '' })
+    try {
+      let result = await pm.installBundle(source, { enabled: true, requestId })
+      if (!result?.ok) throw new Error(message(result?.error) || 'installBundle failed')
+      if (result.value.application === 'failed' && result.value.error?.code === 'already-installed') {
+        storage.write({ requestId, from: snapshot.current, to: snapshot.latest, source, at: now() })
+        const removed = await pm.removeBundle(PLUGIN_ID)
+        if (!removed?.ok) throw new Error(message(removed?.error) || 'removeBundle failed')
+        if (removed.value.application === 'failed' || removed.value.error) { storage.clear(); throw new Error(failure(removed.value)) }
+        // 이 시점에 이 화면은 내려갔을 수 있다. 설치 요청은 그대로 보낸다.
+        result = await pm.installBundle(source, { enabled: true, requestId })
+        if (!result?.ok) throw new Error(message(result?.error) || 'installBundle failed')
+      }
+      storage.clear()
+      if (mine === generation) settle(result.value)
+    } catch (error) {
+      if (mine === generation) set({ phase: 'update-failed', error: message(error) })
+    }
+  }
+  return {
+    subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn) },
+    getSnapshot: () => snapshot,
+    attach(next) { manager = next; check() },
+    detach() { manager = null; generation++; set({ phase: 'unavailable' }) },
+    check,
+    update,
+    cancel,
+    confirm,
+  }
+}
+
+function updateSection(updater, ko) {
+  const s = updater.getSnapshot()
+  const t = (k, e) => (ko ? k : e)
+  const versions = [s.current && t('현재 ' + s.current, 'Installed ' + s.current), s.latest && t('최신 ' + s.latest, 'Latest ' + s.latest)].filter(Boolean).join(' · ')
+  const text = {
+    unavailable: t('Harness 플러그인 관리자에 연결되지 않아 업데이트를 확인할 수 없습니다.', 'Plugin manager is unavailable, so updates cannot be checked.'),
+    checking: t('업데이트를 확인하는 중입니다…', 'Checking for updates…'),
+    current: t('최신 버전입니다.', 'You are up to date.'),
+    available: t('새 버전이 있습니다.', 'A new version is available.'),
+    confirm: t('업데이트하는 동안 이 플러그인이 잠시 꺼졌다가 새 버전으로 다시 켜집니다. 설정은 그대로 남습니다. 혹시 실패하면 Plugins의 + Add plugin에서 같은 GitHub 주소로 다시 추가하세요.',
+      'The plugin turns off briefly and comes back as the new version. Settings are kept. If it fails, add the same GitHub address again from Plugins → + Add plugin.'),
+    updating: t('업데이트하는 중입니다… 창을 닫지 마세요.', 'Updating… keep this window open.'),
+    updated: t('업데이트했습니다.' + (s.from ? ' (' + s.from + ' → ' + (s.current || s.latest) + ')' : ''), 'Updated.' + (s.from ? ' (' + s.from + ' → ' + (s.current || s.latest) + ')' : '')),
+    restart: t('업데이트했습니다. Harness를 다시 시작하면 새 버전이 적용됩니다.', 'Updated. Restart Harness to use the new version.'),
+    unsupported: t('GitHub 주소로 설치한 경우에만 여기서 업데이트할 수 있습니다.', 'Updates here work only for plugins installed from a GitHub address.'),
+    pinned: t('특정 커밋에 고정해 설치해서 여기서는 업데이트하지 않습니다.', 'This install is pinned to a commit, so it is not updated here.'),
+    'check-failed': t('업데이트를 확인하지 못했습니다.', 'Could not check for updates.'),
+    'update-failed': t('업데이트하지 못했습니다.', 'Update failed.'),
+  }[s.phase] ?? ''
+  const busy = s.phase === 'checking' || s.phase === 'updating'
+  const button = (label, onClick, disabled) => React.createElement('button', { type: 'button', onClick, disabled }, label)
+  return React.createElement('section', { 'aria-label': t('업데이트', 'Updates'), style: { display: 'grid', gap: 8, paddingTop: 12, borderTop: '1px solid #8881' } },
+    React.createElement('strong', null, t('업데이트', 'Updates')),
+    versions ? React.createElement('span', { style: { opacity: 0.7 } }, versions) : null,
+    React.createElement('p', { role: 'status', style: { margin: 0 } }, text, s.error ? ' (' + s.error + ')' : ''),
+    React.createElement('div', { style: { display: 'flex', gap: 8 } },
+      s.phase === 'available' ? button(t('업데이트', 'Update'), () => updater.update(), busy) : null,
+      s.phase === 'confirm' ? button(t('계속', 'Continue'), () => updater.confirm(), false) : null,
+      s.phase === 'confirm' ? button(t('취소', 'Cancel'), () => updater.cancel(), false) : null,
+      !['unavailable', 'updated', 'restart', 'confirm', 'updating'].includes(s.phase)
+        ? button(t('다시 확인', 'Check again'), () => updater.check(), busy) : null))
+}
+
+function settingsPage(ctx, form, updater) {
   return function FeatureSettings({ view }) {
     const state = React.useSyncExternalStore((fn) => form.subscribe(fn), () => form.getSnapshot(), () => form.getSnapshot())
     const locale = React.useSyncExternalStore((fn) => ctx.locale.subscribe(fn), () => ctx.locale.getLocale(), () => ctx.locale.getLocale())
+    React.useSyncExternalStore((fn) => updater.subscribe(fn), () => updater.getSnapshot(), () => updater.getSnapshot())
     const [error, setError] = React.useState('')
     const [pending, setPending] = React.useState(false)
     const ko = locale.active.toLowerCase().startsWith('ko')
@@ -146,7 +318,8 @@ function settingsPage(ctx, form) {
         React.createElement('span', null, label),
         React.createElement('input', { type: 'checkbox', role: 'switch', checked: state.value?.[field] !== false, disabled: !state.writable || pending, onChange: (event) => change(field, event.target.checked) }))),
       React.createElement('p', { style: { opacity: 0.7 } }, ko ? '변경 사항은 바로 적용되고 저장됩니다. 한국어는 Settings → General → Language에서 선택할 수 있습니다.' : 'Changes apply and save immediately. Select Korean under Settings → General → Language.'),
-      error ? React.createElement('p', { role: 'alert' }, error) : null)
+      error ? React.createElement('p', { role: 'alert' }, error) : null,
+      updateSection(updater, ko))
   }
 }
 
@@ -171,6 +344,15 @@ function apply(ctx) {
   ctx.effect(() => dispose, 'deepseek-harness-kr: client')
   try {
     const form = ctx.configForms.get(ENTRY_ID)
+    const updater = createUpdater()
+    // 플러그인 관리자는 선택적으로 연결: 없어도 캐릭터·테마·번역은 그대로 동작한다.
+    if (typeof ctx.inject === 'function') {
+      ctx.inject(['remote', 'remote.pluginManager'], (scope) => {
+        updater.attach(scope.remote.pluginManager)
+        scope.effect(() => () => updater.detach(), 'deepseek-harness-kr: updater')
+      })
+    }
+    life.add(() => updater.detach())
     const sync = () => {
       const snapshot = form.getSnapshot()
       if (snapshot.status !== 'ready') return
@@ -183,10 +365,12 @@ function apply(ctx) {
     life.add(form.subscribe(sync))
     life.add(ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
       name: 'plugins.row.config', key: PLUGIN_ID + '#' + ENTRY_ID,
-    }, settingsPage(ctx, form))))
+    }, settingsPage(ctx, form, updater))))
     sync()
   } catch (error) { dispose(); throw error }
 }
 
 exports.inject = ['locale', 'theme', 'configForms', 'slots']
 exports.apply = apply
+// 테스트용
+exports.internals = { githubSource, compareVersions, createUpdater }
