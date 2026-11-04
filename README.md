@@ -17,8 +17,6 @@ https://github.com/user-attachments/assets/7e7a96cc-efc8-416d-89a0-f574fdcda690
 |---|---|
 | `plugin/` · `package.json` | DSH 플러그인: 한국어 UI, 파스텔 테마, Live2D 캐릭터 |
 | `assets/` | 플러그인이 사용하는 캐릭터 코드·Live2D 모델·테마·배경 |
-| `harness/overlay/` | (지원 종료) 예전 ASAR 패치용 한국어화·데스크톱 패치 파일. 번역 추출(`npm run locales:extract`)의 원본으로 남겨 둡니다 |
-| `harness/tools/` | (지원 종료) 예전 ASAR 패치·포터블 빌드 스크립트와 분석 도구 |
 | `plugins/dsh-tts/` | 말풍선 대사를 음성으로 읽어 주는 옵트인 TTS 플러그인 |
 | `infographic/` | 소개 영상 최종본과 제작 파일 |
 
@@ -46,7 +44,7 @@ DSH **0.2.1-rc.5** 이상의 Desktop 앱과 브라우저 Web UI에서 사용할 
 
 3. 한국어가 자동 선택되지 않으면 **Settings → General → Language**에서 **한국어**를 선택합니다.
 
-앱에서 설치하면 현재 앱이 사용하는 프로필에 적용됩니다. 별도의 Node/npm 설치나 전용 패치 스크립트 실행, `app.asar` 교체는 필요하지 않습니다.
+앱에서 설치하면 현재 앱이 사용하는 프로필에 적용됩니다. 별도의 Node/npm 설치는 필요하지 않습니다.
 플러그인은 DSH 사용자 프로필에 설치되므로 앱 업데이트가 설치 파일을 교체해도 유지됩니다. 비활성화하면 캐릭터·테마·번역 등록이 해제됩니다.
 
 ### 업데이트
@@ -91,13 +89,12 @@ DSH **0.2.1-rc.5** 이상의 Desktop 앱과 브라우저 Web UI에서 사용할 
 - DSH 0.2.1-rc.5에서 패키지 설치, Host 활성화 및 클라이언트 주입을 검증했습니다.
 - 작업 상태와 추론 문구는 화면의 DOM 구조로 감지합니다. DSH 업데이트가 DOM 구조나 플러그인 API를 바꾸면 호환성 수정이 필요할 수 있습니다.
 - Electron 네이티브 메뉴·업데이트/복구 창, 패키지 메타데이터 설명과 일부 하드코딩 문구는 언어팩의 번역 대상이 아닙니다.
-- 기존 ASAR 패치를 사용 중이라면 원본 `app.asar`를 복원한 뒤 설치하세요. 두 설치 방식을 동시에 사용하면 캐릭터가 중복 표시될 수 있습니다.
 
 ### 개발자 빌드
 
 ```powershell
 npm ci
-npm run locales:extract  # overlay의 번역을 수정한 경우
+npm run locales:extract  # harness/overlay의 번역을 수정한 경우
 npm run build
 npm test
 ```
@@ -127,7 +124,14 @@ npm test
 - **macOS 설치본:** Harness를 종료하고 `Contents/Resources/app.asar.orig` → `app.asar`, `Contents/Resources/app-update.yml.orig` → `app-update.yml`, `Contents/Info.plist.orig` → `Info.plist`로 되돌린 뒤 `codesign --force --deep -s - "/Applications/DeepSeek Harness.app"`를 실행합니다. 또는 공식 dmg로 다시 설치합니다.
 - **포터블:** 공식 Harness를 설치해서 씁니다. 포터블의 대화 기록과 설정은 포터블 폴더의 `data\`에 그대로 남습니다.
 
-그다음 Harness를 켜고 [플러그인으로 설치](#플러그인으로-설치)를 따라 설치합니다. 패치를 그대로 둔 채 플러그인을 설치하면 캐릭터가 두 개 표시됩니다.
+그다음 Harness를 켜고 [플러그인으로 설치](#플러그인으로-설치)를 따라 설치합니다. 패치를 그대로 둔 채 플러그인을 설치하면 캐릭터가 두 개 표시되니, 꼭 원본 `app.asar`를 되돌린 뒤 설치하세요.
+
+저장소에 남아 있는 예전 방식용 폴더는 다음과 같습니다.
+
+| 폴더 | 내용 |
+|---|---|
+| `harness/overlay/` | 예전 ASAR 패치용 한국어화·데스크톱 패치 파일. 번역 추출(`npm run locales:extract`)의 원본으로 남겨 둡니다 |
+| `harness/tools/` | 예전 ASAR 패치·포터블 빌드 스크립트와 분석 도구 |
 
 ## 라이선스
 
