@@ -371,3 +371,34 @@ test('ready가 오지 않으면 시간 제한 뒤 펫을 끝내고 오류를 알
     pet.dispose()
   } finally { await rm(root, { recursive: true, force: true }) }
 })
+
+test('펫 창 우클릭 메뉴: 설정·크기 프리셋·돌아가기·숨기기·소품·체형을 담고 상태를 페이지에서 받는다', async () => {
+  const main = await readFile(new URL('../../pet/main.cjs', import.meta.url), 'utf8')
+  for (const label of ['설정…', '크기', '창으로 돌아가기', '캐릭터 잠시 숨기기', '소품·옷', '체형']) assert.ok(main.includes(label), label)
+  assert.match(main, /toPage\(\{ type: 'panel', open: true \}\)/)
+  assert.match(main, /toPage\(\{ type: 'size', ratio: r \}\)/)
+  assert.match(main, /toHost\(\{ type: 'config', list: \[\['character', false\]\] \}\)/)
+  assert.match(main, /case 'state':/)   // 메뉴 체크 표시용 상태는 호스트로 넘기지 않는다
+  assert.match(main, /MENU_SIZES = \[0\.75, 1, 1\.25, 1\.5\]/)
+})
+
+test('펫 창 크기: 기본(머리 맞춤) 대비 배율로 기억하고, 패널·휠·메뉴가 같은 값을 쓴다', async () => {
+  const dsc = await readFile(new URL('../../assets/dsc.js', import.meta.url), 'utf8')
+  assert.match(dsc, /const PET_SIZE_KEY = "dsc-pet-size"/)
+  assert.match(dsc, /function petClampK\(k\)/)
+  assert.match(dsc, /Math\.min\(petKFit\(\), Math\.max\(PET_K_MIN, n\)\)/)
+  assert.match(dsc, /petPendingRatio = m\.follow \? ratio : null/)   // 따라오는 중엔 놓을 때 배율을 맞춤
+  assert.match(dsc, /petSetRatio\(Number\(slider\.value\) \/ 100, 0\)/)
+  assert.match(dsc, /else \{ petRememberRatio\(petRatio\(\)\); petSyncMenu\(\); renderPetPanel\(\); \}/)
+  assert.match(dsc, /function petPanelBox\(body\)/)   // 패널 영역도 클릭을 받도록 hitbox에 더함
+  assert.match(dsc, /petPanel\.contains\(e\.target\)/)
+  assert.match(dsc, /else if \(ev\.type === "config" && Array\.isArray\(ev\.list\)\)/)
+  assert.match(dsc, /PET\.send\(\{ type: "fit", w: fitW, h: fitH \}\)/)   // 패널/캐릭터에 맞춰 창 크기
+})
+
+test('펫 창 설정 패널: 값을 설정 저장소로 넘기고 이 플러그인이 아는 키만 반영한다', async () => {
+  const client = await readFile(new URL('../../plugin/client.js', import.meta.url), 'utf8')
+  assert.match(client, /window\.__dscSetConfig = applyPetConfig/)
+  assert.match(client, /PET_CONFIG_KEYS = new Set\(\[\.\.\.OUTFIT_FIELDS\.map/)
+  assert.match(client, /'bodyType', 'character'/)
+})
