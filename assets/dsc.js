@@ -421,6 +421,7 @@
         else { free.anim = null; Object.assign(free, { x: from.x, y: from.y, k }); saveFree(); }
       };
       let lastPlaceKey = "";
+      let hidden = false;   // 캔버스만 숨김 상태 (캐릭터는 내리지 않음)
       let lastClip = "";
       let lastMask = "", lastMaskComposite = "";
       const petWin = { x: NaN, y: NaN };
@@ -435,6 +436,7 @@
         return { x: cx, y: cy };
       };
       const place = () => {
+        if (hidden) { canvas.style.display = bubble.style.display = "none"; return; }
         const now = performance.now();
         const home = homePose();
         if (link.open || link.follow?.shown) { link.home = home; canvas.style.display = bubble.style.display = "none"; lastPlaceKey = ""; return; }   // 펫 창이 대신 보여 줌
@@ -570,7 +572,7 @@
           }
         }
       };
-      const raf = () => { if (SLEEP.state !== "asleep") place(); requestAnimationFrame(raf); };
+      const raf = () => { if (!hidden && SLEEP.state !== "asleep") place(); requestAnimationFrame(raf); };
       requestAnimationFrame(raf);
 
       // 말풍선
@@ -598,6 +600,34 @@
         try { window.dispatchEvent(new CustomEvent("dsc:say", { detail: { text, ms, kind } })); } catch {}
       };
       const hush = () => { relay("hush", []); clearTimeout(bubbleTimer); bubble.classList.remove("show"); };
+      // ---------- 캔버스만 숨김/표시 (설정에서 켠 사람만 단축키 사용) ----------
+      // 캐릭터를 내리지 않고 그리기(티커·rAF)만 멈춰 즉시 전환한다. 설정 저장·재마운트(모델 16.5MB 재로딩)를 피하려는 선택 기능.
+      const setHidden = (next) => {
+        if (PET || hidden === next) return hidden;
+        hidden = next;
+        if (hidden) {
+          drag.pending = null; drag.on = false; strokeFrom = null; chestFrom = null;
+          hush();
+          canvas.style.display = bubble.style.display = "none";
+          veil.style.display = "none";
+          document.documentElement.classList.remove("dsc-hover", "dsc-grabbing");
+          try { app.ticker.stop(); } catch {}
+          if (link.open || link.follow) { link.opening = 0; try { linkPost("hide"); } catch {} }   // 펫 창이 대신 보여 주던 중이면 함께 숨김
+        } else {
+          veil.style.display = "";
+          bubble.style.display = "";
+          canvas.style.display = "";
+          lastPlaceKey = "";
+          try { app.ticker.start(); } catch {}
+          if (SLEEP.state === "asleep" || SLEEP.state === "leaving") startWake();
+          if (!link.open && !link.follow) place();
+        }
+        return hidden;
+      };
+      if (!PET) {
+        window.__dscCanvasToggle = () => setHidden(!hidden);
+        window.__dscCanvasHidden = () => hidden;
+      }
 
       // ---------- 버튜버식 움직임 (얼굴 추적처럼) ----------
       // 이 모델은 VBridger식 리깅: 머리 = AngleX/Y/Z, 몸 = PositionX/Y/Z·LeanInput(물리 엔진이 늦게 따라감),
@@ -1646,12 +1676,13 @@
         });
       };
       const sleepActivity = () => {
+        if (hidden) return;
         SLEEP.lastActive = performance.now();
         startWake();
       };
       for (const t of (PET ? [] : ["pointerdown", "pointermove", "mousedown", "keydown", "wheel", "touchstart"])) addEventListener(t, sleepActivity, { passive: true, capture: true });
       const sleepGo = () => {
-        if (PET || drag.on || drag.pending || free.anim || SLEEP.state !== "active" || intro.phase !== "done" || fleeX !== 0 || walk.phase) return;
+        if (hidden || PET || drag.on || drag.pending || free.anim || SLEEP.state !== "active" || intro.phase !== "done" || fleeX !== 0 || walk.phase) return;
         if (link.open || link.follow?.shown) { SLEEP.lastActive = performance.now(); return; }   // 펫 창으로 밖에 꺼내 둔 동안엔 절전 안 함
         SLEEP.state = "leaving";
         speak("sleep_out", 2600);
@@ -1837,6 +1868,7 @@
         coverChest(3000); inputLockedUntil = now + 2500; walk.lastTouch = now;
       };
       document.addEventListener("pointerdown", (e) => {
+        if (hidden) return;
         if (chestFrom) { e.preventDefault(); e.stopPropagation(); swallowClick = true; return; }
         if (e.button !== 0) return;   // 왼쪽 버튼만 받음 (오른쪽 버튼은 집어 옮기기의 보조 버튼이라 여기서 처리하지 않음)
         swallowClick = false; strokeFrom = null;
@@ -1904,6 +1936,7 @@
         return pressedKeys.has(token);
       };
       document.addEventListener("pointermove", (e) => {
+        if (hidden) return;
         if (PET && petPanelOpen && petPanel && petPanel.contains(e.target)) return;   // 패널 안 조작은 캐릭터 끌기로 이어지지 않음
         // 왼쪽·오른쪽을 함께 누르거나, 보조 키(기본 Alt)를 누른 채 움직이면 곧바로 집어 옮긴다.
         // 머리 쓰다듬기·가슴 끌기 판정과 6px 기준을 거치지 않는다
@@ -2019,6 +2052,7 @@
         release(vx, vy);
       };
       document.addEventListener("pointerup", (e) => {
+        if (hidden) return;
         if (chestFrom && e.pointerId === chestFrom.id) {
           const dragged = chestDragging;
           releaseChest();
@@ -2042,6 +2076,7 @@
       }
       let hoverCheck = 0;
       document.addEventListener("mousemove", (e) => {   // 캐릭터 위에서는 손가락 커서
+        if (hidden) return;
         const now = performance.now(); if (now - hoverCheck < 80) return; hoverCheck = now;
         if (PET && petPanelOpen && petPanel && petPanel.contains(e.target)) { document.documentElement.classList.remove("dsc-hover"); return; }
         const over = !walking() && !!hitAt(e.clientX, e.clientY);
@@ -2049,6 +2084,7 @@
       }, { passive: true });
       // 우클릭은 집어 옮기기의 보조 버튼이라, 끄는 중에는 메뉴를 열지 않는다 (펫 창에서는 놓은 뒤에만 메뉴)
       document.addEventListener("contextmenu", (e) => {
+        if (hidden) return;
         if (drag.pending || drag.on) { e.preventDefault(); e.stopPropagation(); return; }
         if (!PET) return;
         e.preventDefault();
@@ -2058,6 +2094,7 @@
       //   펫 창 = 0.45배 ~ 화면에 들어가는 크기 (넘겨받을 때는 HEAD_GAIN으로 머리 크기를 창 안과 맞춤)
       //   창 안 = 자유 위치일 때만 0.42배~그 창에 들어가는 최대치. 제자리에 붙어 있으면 크기는 자동이라 휠은 대화 스크롤 그대로
       document.addEventListener("wheel", (e) => {
+        if (hidden) return;
         if (PET && petPanelOpen && petPanel && petPanel.contains(e.target)) return;   // 패널 안에서는 휠로 크기를 건드리지 않음
         if (intro.phase !== "done" || !free.on || !overBody(e.clientX, e.clientY)) return;
         e.preventDefault(); e.stopPropagation();   // 캐릭터 위에서는 대화 스크롤 대신 크기 조절
@@ -2315,7 +2352,7 @@
         free.on = false; free.anim = null; saveFree(); lastPlaceKey = "";   // 제자리로 (창이 좁으면 구석, 매 프레임 다시 계산)
         // 창 안 캐릭터가 다시 그려지는 프레임에 바로 펫 창을 숨김 (펫 창이 스스로 숨을 때까지 둘이 겹쳐 보이던 것 방지)
         requestAnimationFrame(() => { if (!link.open && !link.follow) linkPost("hide"); });
-        try { app.ticker.start(); } catch {}
+        try { if (!hidden) app.ticker.start(); } catch {}
       };
       const poll = () => {
         if (link.polling) return;

@@ -23,6 +23,7 @@ const sleepMinutes = (value) => {
 const SHORTCUT_HINT_ID = 'deepseek-harness-kr-shortcut-hint'
 const PET_SHORTCUT_HINT_ID = 'deepseek-harness-kr-pet-shortcut-hint'
 const DRAG_HINT_ID = 'deepseek-harness-kr-drag-hint'
+const CANVAS_HINT_ID = 'deepseek-harness-kr-canvas-hint'
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'CapsLock'])
 const MODIFIER_ALIASES = new Map([
   ['ctrl', 'ctrl'], ['control', 'ctrl'],
@@ -219,6 +220,8 @@ function startCharacter(life) {
   // 캐릭터를 끄거나 플러그인이 내려가면 바깥 펫 창도 숨김 (이 화면에서 펫 창을 쓴 적이 있을 때만)
   life.add(() => {
     delete window.__dscPetToggle
+    delete window.__dscCanvasToggle
+    delete window.__dscCanvasHidden
     if (!window.__dscPetUsed) return
     delete window.__dscPetUsed
     try { window.fetch(PET_ROOT + 'hide', { method: 'POST', keepalive: true }).catch(() => {}) } catch {}
@@ -588,7 +591,7 @@ function updateSection(updater, ko) {
 }
 
 // 단축키 입력 칸: 칸을 눌러 두면 누른 키 조합을 그대로 저장한다. Esc 취소 · Backspace/Delete 지우기 · Tab은 포커스 이동.
-function ShortcutField({ label, hintId, hint, value, placeholder, ariaLabel, ko, disabled, onChange }) {
+function ShortcutField({ label, labelNode, hintId, hint, value, placeholder, ariaLabel, ko, disabled, onChange }) {
   const [recording, setRecording] = React.useState(false)
   const [held, setHeld] = React.useState('')
   const capture = (event) => {
@@ -604,8 +607,8 @@ function ShortcutField({ label, hintId, hint, value, placeholder, ariaLabel, ko,
     stop(); void onChange(action.combo); target.blur()
   }
   return React.createElement(React.Fragment, null,
-    React.createElement('label', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 } },
-      React.createElement('span', null, label),
+    React.createElement(labelNode ? 'div' : 'label', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 } },
+      labelNode ?? React.createElement('span', null, label),
       React.createElement('input', {
         type: 'text',
         readOnly: true,
@@ -696,6 +699,8 @@ function settingsPage(ctx, form, updater, keys) {
     const bodyType = state.value?.bodyType || 'default'
     const shortcutValue = state.value?.characterToggleKey ?? 'Ctrl+Shift+D'
     const petShortcutValue = state.value?.petToggleKey ?? 'Ctrl+Shift+P'
+    const canvasToggle = state.value?.canvasToggle === true
+    const canvasKeyValue = state.value?.canvasToggleKey ?? 'Ctrl+Shift+H'
     const dragKey = state.value?.dragKey || 'Alt'
     return React.createElement('div', { style: { display: 'grid', gap: 16 } },
       ...fields.map(([field, label]) => React.createElement('label', { key: field, style: row },
@@ -751,6 +756,26 @@ function settingsPage(ctx, form, updater, keys) {
           ariaLabel: ko ? '펫 창 단축키 입력' : 'Record pet window shortcut',
           ko, disabled: off,
           onChange: (combo) => change('petToggleKey', combo),
+        }),
+        // 캔버스만 숨김/표시: 켠 사람만 쓰는 선택 기능. 토글을 단축키 칸 왼쪽에 둔다.
+        React.createElement(ShortcutField, {
+          labelNode: React.createElement('span', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+            React.createElement('input', {
+              type: 'checkbox', role: 'switch',
+              'aria-label': ko ? '캔버스만 숨김/표시 사용' : 'Enable canvas hide/show',
+              checked: canvasToggle,
+              disabled: off,
+              onChange: (event) => change('canvasToggle', event.target.checked),
+            }),
+            React.createElement('span', null, ko ? '캔버스만 숨김/표시 (즉시 전환)' : 'Hide/show canvas only (instant)')),
+          hintId: CANVAS_HINT_ID,
+          hint: ko ? '켜면 단축키로 캐릭터를 내리지 않고 캔버스만 즉시 숨기고 표시합니다. 모델을 다시 읽지 않아 복구가 빠릅니다. 끄면 단축키는 동작하지 않습니다.'
+            : 'When on, the shortcut hides and shows the canvas without unloading the character. It skips reloading the model, so restoring is fast. When off, the shortcut does nothing.',
+          value: canvasKeyValue,
+          placeholder: 'Ctrl+Shift+H',
+          ariaLabel: ko ? '캔버스 숨김/표시 단축키 입력' : 'Record canvas hide/show shortcut',
+          ko, disabled: off || !canvasToggle,
+          onChange: (combo) => change('canvasToggleKey', combo),
         })),
       error ? React.createElement('p', { role: 'alert' }, error) : null,
       React.createElement(TtsSection, { form, keys, ko, writable: state.writable, tts: state.value?.tts }),
@@ -837,6 +862,8 @@ function apply(ctx) {
       window.__dscIntro = { enabled: value.intro !== false }
       // 캐릭터 이동 보조 키: 캐릭터가 포인터 이벤트마다 읽는다 (다시 띄우지 않음)
       window.__dscDrag = { key: value.dragKey || 'Alt' }
+      // 캔버스 숨김 기능을 끄면 숨겨 둔 캔버스를 다시 표시 (기능을 되돌렸을 때)
+      if (value.canvasToggle !== true && window.__dscCanvasHidden?.() === true) window.__dscCanvasToggle?.()
     }
     life.add(() => { delete window.__dscOutfit; delete window.__dscSleep; delete window.__dscIntro; delete window.__dscDrag })
     life.add(form.subscribe(sync))
@@ -887,6 +914,30 @@ function apply(ctx) {
       if ((event.code || event.key.toLowerCase()) === heldPetKey) heldPetKey = ''
     })
     life.listen(window, 'blur', () => { heldPetKey = '' })
+    // 캔버스만 숨김/표시 단축키: 설정에서 켠 사람만 동작한다. 입력창에 포커스가 있어도 수식 키 조합이면 실행한다(글자를 쓰지 않음).
+    let heldCanvasKey = ''
+    const canvasToggleListener = (event) => {
+      if (event.repeat) return
+      const snapshot = form.getSnapshot()
+      if (snapshot.status !== 'ready' || snapshot.value?.canvasToggle !== true) return
+      const combo = snapshot.value?.canvasToggleKey ?? 'Ctrl+Shift+H'
+      const toggle = window.__dscCanvasToggle
+      const parsed = parseShortcut(combo)
+      if (!toggle || !parsed) return
+      if (!matchesShortcut(combo, event)) return
+      const el = event.target
+      const inInput = el && (el.isContentEditable || /^(input|textarea|select)$/i.test(el.tagName))
+      if (inInput && !(parsed.ctrl || parsed.alt || parsed.meta)) return
+      event.preventDefault()
+      if (heldCanvasKey) return
+      heldCanvasKey = event.code || event.key.toLowerCase()
+      try { toggle() } catch { console.warn('캔버스 숨김 토글 실패') }
+    }
+    life.listen(window, 'keydown', canvasToggleListener)
+    life.listen(window, 'keyup', (event) => {
+      if ((event.code || event.key.toLowerCase()) === heldCanvasKey) heldCanvasKey = ''
+    })
+    life.listen(window, 'blur', () => { heldCanvasKey = '' })
     life.add(ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
       name: 'plugins.row.config', key: PLUGIN_ID + '#' + ENTRY_ID,
     }, settingsPage(ctx, form, updater, keys))))

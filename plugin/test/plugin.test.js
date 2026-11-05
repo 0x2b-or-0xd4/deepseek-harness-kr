@@ -52,7 +52,7 @@ test('sleep cancels departures, protects intro and wakes for waiting cards', asy
       setExp() {}, setMood() {}, play() {}, mutterCheck() {}, flashExp() {},
       TEXT: { approval: 'approval', question: 'question' },
     })
-    vm.runInContext('let fleeX = 0, running = false, waitingKind = null, lastSayAt = 0, lastError = 0;', context)
+    vm.runInContext('let fleeX = 0, hidden = false, running = false, waitingKind = null, lastSayAt = 0, lastError = 0;', context)
     vm.runInContext(code.slice(code.indexOf('      const WALK_SPEED'), code.indexOf('      const walkBack')), context)
     vm.runInContext(code.slice(code.indexOf('      const SLEEP ='), code.indexOf('      const onLower')), context)
     const pollStart = code.lastIndexOf('      setInterval(() => {')
@@ -109,7 +109,7 @@ test('sleep preserves free placement, blocks dragging and never sleeps while the
       keepIn: (q) => q, speak: (line) => lines.push(line), hush() {}, place() {},
     })
     const run = (s) => vm.runInContext(s, context)
-    run('let fleeX = 0, running = false, waitingKind = null, snapP = 0;')
+    run('let fleeX = 0, hidden = false, running = false, waitingKind = null, snapP = 0;')
     run(code.slice(code.indexOf('      const WALK_SPEED'), code.indexOf('      const walkBack')))
     run(code.slice(code.indexOf('      const SLEEP ='), code.indexOf('      const onLower')))
     run(code.slice(code.indexOf('      const dockPose ='), code.indexOf('      const GLIDE =')))
@@ -322,13 +322,17 @@ test('settings page records the shortcut by pressing keys instead of typing it',
   } finally { h.dom.window.close() }
 })
 
-test('drag key and pet window shortcut are configurable and defaulted', () => {
+test('drag key, pet window shortcut and canvas toggle are configurable and defaulted', () => {
   const defaults = readLive(Config({}))
   assert.equal(defaults.dragKey, 'Alt')
   assert.equal(defaults.petToggleKey, 'Ctrl+Shift+P')
-  const custom = readLive(Config({ dragKey: 'F', petToggleKey: '' }))
+  assert.equal(defaults.canvasToggle, false)
+  assert.equal(defaults.canvasToggleKey, 'Ctrl+Shift+H')
+  const custom = readLive(Config({ dragKey: 'F', petToggleKey: '', canvasToggle: true, canvasToggleKey: 'H' }))
   assert.equal(custom.dragKey, 'F')
   assert.equal(custom.petToggleKey, '')
+  assert.equal(custom.canvasToggle, true)
+  assert.equal(custom.canvasToggleKey, 'H')
 })
 
 test('drag key recorder accepts one modifier or one ordinary key', () => {
@@ -363,6 +367,11 @@ test('settings page exposes the drag key and pet window shortcut', () => {
     assert.match(html, /aria-label="Record pet window shortcut"/)
     assert.match(html, /value="Ctrl\+Shift\+P"/)
     assert.match(html, /id="deepseek-harness-kr-pet-shortcut-hint"/)
+    assert.match(html, /aria-label="Enable canvas hide\/show"/)
+    assert.match(html, /Hide\/show canvas only \(instant\)/)
+    assert.match(html, /aria-label="Record canvas hide\/show shortcut"/)
+    assert.match(html, /value="Ctrl\+Shift\+H"/)
+    assert.match(html, /id="deepseek-harness-kr-canvas-hint"/)
     ctx.dispose()
   } finally { h.dom.window.close() }
 })
@@ -392,6 +401,37 @@ test('pet window shortcut calls the toggle the character exposes', () => {
   } finally { h.dom.window.close() }
 })
 
+test('canvas shortcut only runs when enabled and works inside the composer', () => {
+  const h = clientHarness({ character: false, theme: false, translation: false, canvasToggle: true, canvasToggleKey: 'Ctrl+Shift+H' })
+  try {
+    const ctx = h.ctx(); h.client.apply(ctx)
+    let calls = 0
+    h.dom.window.__dscCanvasToggle = () => { calls++ }
+    const fire = (type, extra = {}, target = h.dom.window) => {
+      const event = new h.dom.window.KeyboardEvent(type, { key: 'H', code: 'KeyH', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true, ...extra })
+      target.dispatchEvent(event)
+      return event
+    }
+    const press = (extra = {}, target = h.dom.window) => {
+      const event = fire('keydown', extra, target)
+      const releaseEvent = fire('keyup', extra, target)
+      return { event, releaseEvent }
+    }
+    assert.equal(press().event.defaultPrevented, true)
+    assert.equal(calls, 1)
+    const input = h.dom.window.document.createElement('textarea')
+    h.dom.window.document.body.append(input)
+    press({}, input)   // 수식 키 조합은 입력창 안에서도 동작
+    assert.equal(calls, 2)
+    press({ shiftKey: false })   // 다른 조합은 무시
+    assert.equal(calls, 2)
+    h.form.update({ ...h.form.getSnapshot().value, canvasToggle: false })
+    press()
+    assert.equal(calls, 2)   // 기능을 끄면 단축키가 동작하지 않음
+    ctx.dispose()
+  } finally { h.dom.window.close() }
+})
+
 test('character source supports modifier drag and a pet window toggle', async () => {
   const source = await readFile(new URL('../../assets/dsc.js', import.meta.url), 'utf8')
   for (const code of [source, bundle]) {
@@ -400,6 +440,7 @@ test('character source supports modifier drag and a pet window toggle', async ()
     assert.match(code, /link\.queue\.push\(\["drag", \[dragKeyRaw\(\)\]\]\)/)
     assert.match(code, /fn === "drag"\) window\.__dscDrag = \{ key: a\[0\] \}/)
     assert.match(code, /fn === "dragheld"\)/)
+    assert.match(code, /window\.__dscCanvasToggle = \(\) => setHidden\(!hidden\)/)
   }
 })
 
@@ -565,7 +606,7 @@ test('plugin settings page exposes feature and power saving switches', () => {
     const Page = h.pages.get(packageName + '#deepseek-harness-kr')
     assert(Page)
     const html = renderToStaticMarkup(React.createElement(Page, { view: 'page' }))
-    assert.equal((html.match(/role="switch"/g) || []).length, 5)
+    assert.equal((html.match(/role="switch"/g) || []).length, 6)
     assert.equal((html.match(/<input type="checkbox" role="switch" checked=""/g) || []).length, 3)
     assert.match(html, /Character and speech bubbles/)
     assert.match(html, /Intro on startup/)
@@ -736,7 +777,7 @@ test('settings page shows the update section and still works without the plugin 
     const html = renderToStaticMarkup(React.createElement(Page, { view: 'page' }))
     assert.match(html, /aria-label="Updates"/)
     assert.match(html, /Plugin manager is unavailable/)
-    assert.equal((html.match(/role="switch"/g) || []).length, 5)
+    assert.equal((html.match(/role="switch"/g) || []).length, 6)
     ctx.dispose()
   } finally { h.dom.window.close() }
 })
@@ -841,7 +882,7 @@ test('settings page shows the voice section without needing a YAML edit', () => 
     assert.match(html, /AI-generated voice/)
     assert.match(html, /credential store is unavailable/)
     assert.match(html, /type="password"/)
-    assert.equal((html.match(/role="switch"/g) || []).length, 5, 'feature, intro and sleep switches are present')
+    assert.equal((html.match(/role="switch"/g) || []).length, 6, 'feature, intro, sleep and canvas switches are present')
     ctx.dispose()
   } finally { h.dom.window.close() }
 })
