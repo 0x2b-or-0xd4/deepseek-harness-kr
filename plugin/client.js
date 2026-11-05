@@ -591,7 +591,7 @@ function updateSection(updater, ko) {
 }
 
 // 단축키 입력 칸: 칸을 눌러 두면 누른 키 조합을 그대로 저장한다. Esc 취소 · Backspace/Delete 지우기 · Tab은 포커스 이동.
-function ShortcutField({ label, labelNode, hintId, hint, value, placeholder, ariaLabel, ko, disabled, onChange }) {
+function ShortcutField({ label, control, hintId, hint, value, placeholder, ariaLabel, ko, disabled, onChange }) {
   const [recording, setRecording] = React.useState(false)
   const [held, setHeld] = React.useState('')
   const capture = (event) => {
@@ -607,21 +607,23 @@ function ShortcutField({ label, labelNode, hintId, hint, value, placeholder, ari
     stop(); void onChange(action.combo); target.blur()
   }
   return React.createElement(React.Fragment, null,
-    React.createElement(labelNode ? 'div' : 'label', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 } },
-      labelNode ?? React.createElement('span', null, label),
-      React.createElement('input', {
-        type: 'text',
-        readOnly: true,
-        'aria-label': ariaLabel,
-        'aria-describedby': hintId,
-        placeholder: recording ? (ko ? '키를 누르세요…' : 'Press keys…') : placeholder,
-        style: { width: 150, cursor: 'pointer', textAlign: 'center', borderColor: recording ? '#7aa7ff' : undefined },
-        value: recording ? held : (value ?? ''),
-        disabled,
-        onFocus: () => { if (disabled) return; setRecording(true); setHeld('') },
-        onBlur: () => { setRecording(false); setHeld('') },
-        onKeyDown: capture,
-      })),
+    React.createElement(control ? 'div' : 'label', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 } },
+      React.createElement('span', null, label),
+      React.createElement('span', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+        control ?? null,
+        React.createElement('input', {
+          type: 'text',
+          readOnly: true,
+          'aria-label': ariaLabel,
+          'aria-describedby': hintId,
+          placeholder: recording ? (ko ? '키를 누르세요…' : 'Press keys…') : placeholder,
+          style: { width: 150, cursor: 'pointer', textAlign: 'center', borderColor: recording ? '#7aa7ff' : undefined },
+          value: recording ? held : (value ?? ''),
+          disabled,
+          onFocus: () => { if (disabled) return; setRecording(true); setHeld('') },
+          onBlur: () => { setRecording(false); setHeld('') },
+          onKeyDown: capture,
+        }))),
     React.createElement('p', { id: hintId, style: { margin: 0, opacity: 0.7 } }, hint))
 }
 
@@ -728,8 +730,8 @@ function settingsPage(ctx, form, updater, keys) {
         React.createElement(DragKeyField, {
           label: ko ? '캐릭터 이동 키 (누른 채 끌기)' : 'Move character key (hold while dragging)',
           hintId: DRAG_HINT_ID,
-          hint: ko ? '칸을 누른 뒤 수식 키(Alt·Ctrl·Shift·Cmd) 하나 또는 일반 키 하나를 누르세요. 비우면 좌우 버튼을 함께 눌러야 옮겨집니다.'
-            : 'Click the field, then press one modifier (Alt, Ctrl, Shift, Cmd) or one other key. Empty needs both buttons.',
+          hint: ko ? '캐릭터를 집어 옮길 때 누르고 있어야 하는 키입니다. 칸을 누른 뒤 수식 키(Alt·Ctrl·Shift·Cmd) 하나 또는 일반 키 하나를 누르면 등록됩니다. 비우면 좌우 버튼을 함께 눌러야 하고, Esc 취소, Backspace로 지우기'
+            : 'Hold this key while dragging to move the character. Click the field, then press one modifier (Alt, Ctrl, Shift, Cmd) or one other key. Empty needs both buttons. Esc cancels, Backspace clears.',
           value: dragKey,
           ariaLabel: ko ? '캐릭터 이동 키 입력' : 'Record drag key',
           ko, disabled: off,
@@ -749,32 +751,31 @@ function settingsPage(ctx, form, updater, keys) {
         React.createElement(ShortcutField, {
           label: ko ? '펫 창 내보내기·돌아오기 단축키 (비우면 사용 안 함)' : 'Pet window shortcut (empty to disable)',
           hintId: PET_SHORTCUT_HINT_ID,
-          hint: ko ? '캐릭터를 바깥 펫 창으로 내보내고 다시 불러옵니다. 칸을 누른 뒤 키 조합을 누르세요.'
-            : 'Moves the character out to the pet window and back. Click the field, then press the keys you want.',
+          hint: ko ? '캐릭터를 바깥 펫 창으로 내보내고 다시 불러옵니다. 칸을 누른 뒤 원하는 키 조합을 그대로 누르면 등록됩니다. Esc 취소, Backspace로 지우기'
+            : 'Moves the character out to the pet window and back. Click the field, then press the keys you want. Esc cancels, Backspace clears.',
           value: petShortcutValue,
           placeholder: 'Ctrl+Shift+P',
           ariaLabel: ko ? '펫 창 단축키 입력' : 'Record pet window shortcut',
           ko, disabled: off,
           onChange: (combo) => change('petToggleKey', combo),
         }),
-        // 캔버스만 숨김/표시: 켠 사람만 쓰는 선택 기능. 토글을 단축키 칸 왼쪽에 둔다.
+        // 캔버스만 숨김/표시: 켠 사람만 쓰는 선택 기능. 스위치를 단축키 칸 바로 왼쪽에 둔다.
         React.createElement(ShortcutField, {
-          labelNode: React.createElement('span', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
-            React.createElement('input', {
-              type: 'checkbox', role: 'switch',
-              'aria-label': ko ? '캔버스만 숨김/표시 사용' : 'Enable canvas hide/show',
-              checked: canvasToggle,
-              disabled: off,
-              onChange: (event) => change('canvasToggle', event.target.checked),
-            }),
-            React.createElement('span', null, ko ? '캔버스만 숨김/표시 (즉시 전환)' : 'Hide/show canvas only (instant)')),
+          label: ko ? '캔버스만 숨김/표시 단축키 (비우면 사용 안 함)' : 'Hide/show canvas shortcut (empty to disable)',
+          control: React.createElement('input', {
+            type: 'checkbox', role: 'switch',
+            'aria-label': ko ? '캔버스만 숨김/표시 사용' : 'Enable canvas hide/show',
+            checked: canvasToggle,
+            disabled: off,
+            onChange: (event) => change('canvasToggle', event.target.checked),
+          }),
           hintId: CANVAS_HINT_ID,
-          hint: ko ? '켜면 단축키로 캐릭터를 내리지 않고 캔버스만 즉시 숨기고 표시합니다. 모델을 다시 읽지 않아 복구가 빠릅니다. 끄면 단축키는 동작하지 않습니다.'
-            : 'When on, the shortcut hides and shows the canvas without unloading the character. It skips reloading the model, so restoring is fast. When off, the shortcut does nothing.',
+          hint: ko ? '왼쪽 스위치를 켜면 캐릭터를 내리지 않고 캔버스만 즉시 숨기고 표시합니다. 칸을 누른 뒤 원하는 키 조합을 그대로 누르면 등록됩니다. Esc 취소, Backspace로 지우기'
+            : 'Turn on the switch to hide and show the canvas instantly without unloading the character. Click the field, then press the keys you want. Esc cancels, Backspace clears.',
           value: canvasKeyValue,
           placeholder: 'Ctrl+Shift+H',
           ariaLabel: ko ? '캔버스 숨김/표시 단축키 입력' : 'Record canvas hide/show shortcut',
-          ko, disabled: off || !canvasToggle,
+          ko, disabled: off,
           onChange: (combo) => change('canvasToggleKey', combo),
         })),
       error ? React.createElement('p', { role: 'alert' }, error) : null,
