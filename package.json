@@ -12,15 +12,21 @@
   },
   "files": [
     "plugin/host.js",
+    "plugins/dsh-tts/src/cache.js",
+    "plugins/dsh-tts/src/config.js",
+    "plugins/dsh-tts/src/host.js",
+    "plugins/dsh-tts/src/index.js",
+    "plugin/pet-host.js",
     "lib/client.js",
     "assets/",
+    "pet/",
     "cordis.patch.yml",
     "NOTICE.md",
     "LICENSE"
   ],
   "scripts": {
     "build": "node plugin/build.mjs",
-    "test": "node --test plugin/test/*.test.js",
+    "test": "node --test plugin/test/*.test.js plugins/dsh-tts/test/*.test.js",
     "locales:extract": "node plugin/extract-locales.mjs"
   },
   "engines": {

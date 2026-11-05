@@ -174,20 +174,32 @@
       for (const [key] of OUTFIT_PARAMS) outfitW[key] = (window.__dscOutfit || {})[key] ? 1 : 0;   // 처음엔 저장된 모습 그대로 (서서히 나타나지 않게)
       let basinUntil = 0, basinW = 0;   // 세숫대야 (머리를 천천히 쓸어내리면)
       let bodyW = BODY_VALUE[(window.__dscOutfit || {}).bodyType] || 0, outfitPrev = null, outfitTalk = null;
+      // ---------- 바깥 펫 창 ----------
+      // PET: 이 코드가 바깥 펫 창 안에서 도는 중 (preload가 window.dscPet을 넣어 줌). 좌표 = 화면 px, 창이 캐릭터를 따라 움직임.
+      // link: 창 안 캐릭터 쪽에서 펫 창이 열려 있으면 캐릭터를 숨기고, 반응(말·몸짓·표정)을 플러그인 호스트를 거쳐 펫 창으로 보냄.
+      const PET = window.__dscPetMode ? window.dscPet : null;
+      const PET_URL = PET ? null : (() => { try { return new URL("../pet/", new URL(BASE, location.href)).href; } catch { return null; } })();
+      // follow: 끄는 도중 창 밖으로 나가 펫 창이 커서를 따라오는 중 ({ shown, pose, busy }), boot: 화면을 처음 불러온 뒤 첫 조회 전,
+      // petState: 호스트가 알려 준 펫 프로세스 상태 (none | starting | hidden | shown),
+      // seq: 펫 창을 열 때마다 올리는 회차 번호. 펫 창 알림에 같은 번호가 붙어 와서, 이전 회차에서 늦게 온 알림을 가려냄
+      const link = { open: false, opening: 0, supported: false, queue: [], last: "", polling: false, voiceSent: null, home: null, follow: null, boot: true, petState: "none", peek: 0, seq: 0 };
+      // 펫 창이 보이는 동안(따라오는 중 포함)만 반응을 모아 보냄
+      const relay = (fn, args) => { if (link.open || link.follow?.shown) link.queue.push([fn, args]); };
+      let linkPost = async () => null;   // 아래 연결 코드에서 채움
       const EYE_EXP = ["heart", "squint", "smug", "dizzy"];
       const clearOtherEyes = (name) => { if (EYE_EXP.includes(name)) for (const e of EYE_EXP) if (e !== name) { until[e] = 0; hold[e] = false; } };
-      const setExp = (name, on) => { if (on) clearOtherEyes(name); hold[name] = on; };
-      const flashExp = (name, ms) => { clearOtherEyes(name); until[name] = performance.now() + ms; };
+      const setExp = (name, on) => { relay("setExp", [name, on]); if (on) clearOtherEyes(name); hold[name] = on; };
+      const flashExp = (name, ms) => { relay("flashExp", [name, ms]); clearOtherEyes(name); until[name] = performance.now() + ms; };
 
       // 버튜버식 몸짓: 한 번씩 재생하는 동작(gesture) + 지금 상태에 따른 자세(mood)
       const gest = { name: null, start: 0, dur: 0, dir: 1 };
       // 왼손으로 가슴 가리기 (데스크톱 펫의 "가슴에 손" 값): Param59 위팔 원근, Param60 아래팔, Param61 손목, Param62 위팔, Movement2 = 몸 앞용 팔 그림
       const cover = { until: 0, start: -1e9, q: 0 };   // q: 0 = 팔 내림, 1 = 가슴을 가림
       const coverChest = (ms) => { const now = performance.now(); if (now >= cover.until) cover.start = now; cover.until = Math.max(cover.until, now + ms); };
-      const play = (name, dur) => { gest.name = name; gest.start = performance.now(); gest.dur = dur; gest.dir = Math.random() < 0.5 ? -1 : 1; if (BOB_KICK[name]) bobKick(BOB_KICK[name]); };
+      const play = (name, dur) => { relay("play", [name, dur]); gest.name = name; gest.start = performance.now(); gest.dur = dur; gest.dir = Math.random() < 0.5 ? -1 : 1; if (BOB_KICK[name]) bobKick(BOB_KICK[name]); };
       const BOB_KICK = { bounce: 60, laugh: 50, nod: -45 };   // 몸짓 시작 때 몸 튕김 세기
       let mood = "idle", moodUntil = 0, nextIdleGesture = performance.now() + 6000, talkUntil = 0;
-      const setMood = (m, ms = 0) => { mood = m; moodUntil = ms ? performance.now() + ms : 0; };
+      const setMood = (m, ms = 0) => { relay("setMood", [m, ms]); mood = m; moodUntil = ms ? performance.now() + ms : 0; };
       const pose = { lean: 0, headZ: 0, headY: 0, bodyY: 0, swayAmp: 0 };   // 부드럽게 따라가는 자세 값
       let shiverStarted = -1e9, touchLeanUntil = 0, touchLean = 0;
       let shiverBobAt = 0, shiverBobSign = 1;
@@ -200,9 +212,28 @@
 
       // 위치: 오른쪽 아래 구석, 입력창을 가리지 않는 가장 큰 크기
       const visW = bw * s, visH = H * 0.95;
-      let curK = 1, fleeX = 0;     // 현재 배율, 제자리에서 옆으로 비켜난 거리(px, 도망 = +오른쪽, 산책 = -왼쪽)
-      // 산책: 가끔 왼쪽 화면 밖으로 걸어 나갔다가 잠시 뒤 오른쪽 끝에서 걸어 들어옴 (phase: "" | ready | out | away | in)
-      const walk = { phase: "", face: 0, timer: 0, lastTouch: 0, next: performance.now() + (180 + Math.random() * 180) * 1000 };
+      let curK = 1, fleeX = 0;     // 현재 배율, 도망·산책으로 옆으로 비켜난 거리(px, + 오른쪽 · - 왼쪽)
+      // 자유 위치: 끌어서 옮긴 자리 (창 안 = 창 좌표, 펫 창 = 화면 좌표). 제자리 근처에 놓으면 다시 붙음.
+      const free = { on: false, x: 0, y: 0, k: 1, anim: null };
+      const drag = { pending: null, on: false, x: 0, y: 0, samples: [] };
+      const carry = { vx: 0, vy: 0 };              // 끄는 속도(px/초) → 몸이 관성으로 쏠리고 머리카락·치마가 흔들림
+      const shown = { k: 1, x: 0, y: 0 };          // 지난 프레임에 그린 자리 (끌기 시작점)
+      let petDock = null, petDocked = false, snapP = 0;   // 펫 창: 붙을 자리(DSH 창의 제자리, 화면 좌표), 붙은 뒤, 붙는 진행도
+      const FREE_KEY = "dsc-free-pos";
+      // 창 안 자유 위치는 창 크기 비율로 기억: 몸 가운데의 가로 비율(fx)·그림 아래 끝의 세로 비율(fy).
+      // 창 크기가 바뀌면 같은 비율 자리로 옮겨 가서, 최대화를 풀어도 옛 픽셀 자리에 남아 화면 밖으로 밀리지 않음
+      const freeToRatio = () => { free.fx = (free.x + W * free.k / 2) / innerWidth; free.fy = (free.y + H * free.k) / innerHeight; };
+      if (!PET) try {
+        const s = JSON.parse(localStorage.getItem(FREE_KEY) || "null");
+        if (s && isFinite(s.fx) && isFinite(s.fy) && s.k > 0) Object.assign(free, { on: true, fx: s.fx, fy: s.fy, k: s.k });
+      } catch {}
+      const saveFree = (fromPose = true) => {   // fromPose: 지금 x·y에서 비율을 다시 계산 (휠처럼 크기만 바꿀 땐 비율을 그대로 둠)
+        if (PET) return;
+        if (free.on && fromPose) freeToRatio();
+        try { if (free.on) localStorage.setItem(FREE_KEY, JSON.stringify({ fx: +free.fx.toFixed(4), fy: +free.fy.toFixed(4), k: +free.k.toFixed(3) })); else localStorage.removeItem(FREE_KEY); } catch {}
+      };
+      // 산책: 가끔 가까운 쪽 화면 밖으로 걸어 나갔다가 잠시 뒤 같은 쪽에서 걸어 들어옴 (phase: "" | ready | out | away | in, dir: -1 왼쪽 · 1 오른쪽)
+      const walk = { phase: "", face: 0, dir: -1, out: 0, timers: [], slideId: 0, lastTouch: 0, next: performance.now() + (180 + Math.random() * 180) * 1000 };
       let walkCheck = null;
       // 시작 연출: 처음엔 화면 가운데에 크게 인사 → 본 화면이 뜨면 오른쪽 아래 제자리로 이동
       const DPR = (devicePixelRatio || 1) * 1.5;   // 1.5배로 그려 줄여 보여 줌 (윤곽선 매끄럽게)
@@ -214,11 +245,28 @@
       const setRes = (k) => { app.renderer.resolution = DPR * Math.max(1, k); app.renderer.resize(W, H); };
       const ease = (p) => (p < 0 ? 0 : p > 1 ? 1 : p * p * (3 - 2 * p));
       // 오른쪽 아래 제자리 (원래 배치)
+      // 입력 카드 표시(dsc-composer)는 다음 프레임에 붙으므로, 세션 전환으로 카드가 새로 생긴 프레임에는 같은 조건으로 직접 찾는다
+      // (못 찾으면 최대 크기로 한 프레임 커졌다가 돌아옴)
+      const findCard = () => document.querySelector(".dsc-composer") ||
+        [...document.querySelectorAll('[class*="_card"]')].find((e) => e.closest('[class*="_root"]') && e.querySelector('[class*="_input"]'));
+      // 질문·승인 카드가 입력창 자리를 대신하면 입력 카드는 숨겨져 크기가 0이 되므로, 같은 자리에 뜬 카드로 잰다
+      const cardRect = (card) => {
+        const r = card.getBoundingClientRect();
+        if (r.width) return r;
+        const seat = card.closest('[class*="composerSeat"]');
+        for (const alt of seat ? seat.querySelectorAll('[class*="_card"]') : []) {
+          if (alt === card) continue;   // 표시가 붙기 전 프레임에도 자기 자신은 건너뜀
+          const ar = alt.getBoundingClientRect();
+          if (ar.width) return ar;
+        }
+        return null;
+      };
       const homePose = () => {
-        const card = document.querySelector(".dsc-composer");
+        const card = findCard();
         const maxK = Math.min(1.25, (innerHeight * 0.45) / visH);
-        let k = maxK, r = null;
-        if (card) { r = card.getBoundingClientRect(); k = Math.min(maxK, Math.max((innerWidth - r.right - 8) / visW, (innerHeight - r.bottom - 10) / visH)); }
+        let k = maxK;
+        const r = card ? cardRect(card) : null;
+        if (r) k = Math.min(maxK, Math.max((innerWidth - r.right - 8) / visW, (innerHeight - r.bottom - 10) / visH));
         return { k, x: innerWidth - 4 - (W + visW) / 2 * k + fleeX, y: innerHeight - H * k, card, r };
       };
       const centerPose = () => {
@@ -227,12 +275,113 @@
         return { k, x: innerWidth / 2 - W * k / 2, y: innerHeight - H * k };
       };
       intro.kc = centerPose().k; setRes(intro.kc);
+      // 펫 창이거나 이미 펫 창이 떠 있으면 시작 연출 없이 바로 제자리
+      const skipIntro = () => {
+        if (intro.phase === "done") return;
+        intro.phase = "done"; setRes(1); veil.remove(); canvas.style.opacity = "";
+        bubble.style.left = ""; bubble.style.fontSize = ""; bubble.style.padding = "";   // 시작 연출용 큰 말풍선 스타일 해제
+      };
+      if (PET) skipIntro();
+
+      // ---------- 자유 위치 계산 ----------
+      // 캔버스 왼쪽 위(x, y)·배율 k일 때 보이는 몸 영역 (양옆 빈 곳·머리 위 여백 제외). 커서가 몸 위인지 판정할 때 씀
+      const bodyRect = (x, y, k) => { const side = (W - visW) / 2 * k; return { l: x + side, t: y + H * 0.05 * k, r: x + W * k - side, b: y + H * k }; };
+      const easeOut = (p) => 1 - Math.pow(1 - p, 3);
+      const easeBack = (p) => { const c = 1.25, q = p - 1; return 1 + (c + 1) * q * q * q + c * q * q; };   // 끝에서 살짝 넘쳤다 돌아옴 (자석에 붙는 느낌)
+      const area = () => PET ? { l: screen.availLeft, t: screen.availTop, r: screen.availLeft + screen.availWidth, b: screen.availTop + screen.availHeight }
+        : { l: 0, t: 0, r: innerWidth, b: innerHeight };
+      const keepIn = (p) => {   // 보이는 몸이 영역 밖으로 다 나가지 않게
+        const a = area(), side = (W - visW) / 2 * p.k;
+        return { k: p.k, x: Math.min(Math.max(p.x, a.l - side), a.r - W * p.k + side), y: Math.min(Math.max(p.y, a.t - H * p.k * 0.05), a.b - H * p.k * 0.3) };
+      };
+      // 창 좌표 → 화면 좌표 (창 테두리·제목 표시줄 두께를 뺌)
+      const screenOf = (x, y) => { const bx = (outerWidth - innerWidth) / 2; return { x: screenX + bx + x, y: screenY + Math.max(0, outerHeight - innerHeight - bx) + y }; };
+      const SHOW_K = 0.42;   // 제자리 크기가 이보다 작으면 입력창을 피할 자리가 없음
+      // 붙을 자리 = 제자리. 창이 좁아 제자리 크기가 SHOW_K보다 작으면(예전엔 숨김) 보일 수 있는 가장 작은 크기로 오른쪽 아래 구석.
+      // 매 프레임 다시 계산하므로 창 크기가 바뀌면 붙어 있는 캐릭터의 크기·위치도 따라 바뀜
+      const dockTarget = (home) => (home.k >= SHOW_K ? home : { k: SHOW_K, x: innerWidth - 4 - (W + visW) / 2 * SHOW_K + fleeX, y: innerHeight - H * SHOW_K });
+      // 보이는 몸이 창 밖에 있는지. 경계에서 판정이 왔다 갔다 하지 않게 회색 지대를 둠:
+      //   넘어갈 때(entering) = 몸의 15%가 밖으로 나가야 함 (아래쪽은 제자리가 창 아래 끝에 붙어 있어 그림의 50%)
+      //   이미 펫 창이 따라오는 중 = 몸이 거의 다 창 안으로 돌아와야(가장자리 2% 안쪽, 아래쪽은 20%만 남음) 창 안으로 봄
+      const bodyOut = (q, entering = true) => {
+        const side = (W - visW) / 2 * q.k, edge = visW * q.k * (entering ? 0.15 : -0.02), low = entering ? 0.5 : 0.8;
+        return q.x + side < -edge || q.x + W * q.k - side > innerWidth + edge || q.y < -edge || q.y + H * q.k * low > innerHeight;
+      };
+      // 펫 창: 몸이 DSH 창(화면 좌표 w) 안으로 거의 다 들어왔는지 (가장자리 2% 안쪽, 아래쪽은 그림의 20%만 남음)
+      const inWindow = (q, w) => {
+        const side = (W - visW) / 2 * q.k, edge = visW * q.k * 0.02;
+        return q.x + side >= w.l + edge && q.x + W * q.k - side <= w.r - edge && q.y >= w.t + edge && q.y + H * q.k * 0.8 <= w.b;
+      };
+      const dockPose = (home, now) => {
+        snapP = 0;
+        if (drag.on) return { k: free.k, x: drag.x, y: drag.y };
+        const a = free.anim;
+        if (a) {
+          const p = Math.min(1, (now - a.t0) / a.ms), to = a.snap ? (PET ? petDock : dockTarget(home)) || a.from : a.to;
+          const e = a.snap ? easeBack(p) : easeOut(p), ek = easeOut(p);
+          const pose = { k: a.from.k + (to.k - a.from.k) * ek, x: a.from.x + (to.x - a.from.x) * e, y: a.from.y + (to.y - a.from.y) * e };
+          if (a.snap) snapP = ek;
+          if (p >= 1) {
+            free.anim = null;
+            if (a.snap && !PET) { free.on = false; saveFree(); }
+            else { Object.assign(free, { on: true, x: to.x, y: to.y, k: to.k }); saveFree(); }
+            if (a.snap && PET) { petDocked = true; PET.send({ type: "attach" }); }
+          }
+          return pose;
+        }
+        if (!free.on) return dockTarget(home);
+        let q = free;
+        if (!PET) {   // 창 크기 비율 자리, 크기는 지금 창에 들어가는 최대치까지만
+          if (!isFinite(free.fx) || !isFinite(free.fy)) freeToRatio();
+          const k = Math.max(SHOW_K, Math.min(free.k, Math.min(1.25, (innerHeight * 0.45) / visH)));   // 하한: 이보다 작으면 숨겨짐
+          q = { k, x: free.fx * innerWidth - W * k / 2, y: free.fy * innerHeight - H * k };
+        }
+        const p = keepIn(q);
+        return { k: p.k, x: p.x + fleeX, y: p.y };
+      };
+      // 손을 놓을 때: 속도만큼 조금만 미끄러짐(GLIDE). 멈출 자리가 제자리(펫 창이면 DSH 창의 제자리) 근처면 자석으로 붙고, 창 밖이면 펫 창으로.
+      const GLIDE = 0.066;   // 놓을 때 속도 × 이 시간(초)만큼 미끄러짐
+      const release = (vx, vy) => {
+        const k = free.k, from = { k, x: drag.x, y: drag.y }, p = { k, x: from.x + vx * GLIDE, y: from.y + vy * GLIDE };
+        const home = PET ? petDock : dockTarget(homePose());
+        const mid = (q, kk) => [q.x + W * kk / 2, q.y + H * kk * 0.5];
+        const [px, py] = mid(p, k);
+        // 창 밖이 자석보다 먼저: 제자리는 창 구석에 붙어 있어 자석 범위가 창 밖까지 걸치므로, 순서가 반대면 구석에서 밖으로 던져도 다시 붙음
+        const outside = !PET && bodyOut(p);
+        // 펫 창은 몸이 DSH 창 안으로 거의 다 돌아왔을 때만 붙음 (창 밖 바로 옆, 제자리 근처에 놓았을 때 다시 붙지 않게. 창 안 쪽의 '나올 때' 기준과 같음)
+        const backIn = !PET || !home?.win || inWindow(p, home.win);
+        const snap = !outside && backIn && !!home && Math.hypot(px - mid(home, home.k)[0], py - mid(home, home.k)[1]) < Math.max(140, visW * k * 0.7);
+        if (Math.hypot(vx, vy) > 2600) flashExp("dizzy", 1500);   // 세게 던지면 빙글빙글
+        if (outside && link.supported) {
+          const a = screenOf(from.x, from.y), b = screenOf(p.x, p.y);
+          link.opening = performance.now();
+          linkPost("open", { from: { k, x: a.x, y: a.y }, to: { k, x: b.x, y: b.y }, seq: ++link.seq });
+        }
+        free.on = true;
+        if (snap) { free.anim = { t0: performance.now(), ms: 650, from, to: null, snap: true }; return; }
+        const to = keepIn(p);   // 미끄러진 자리 (화면 밖으로 나간 부분은 살짝 당겨 들임)
+        if (to.x !== from.x || to.y !== from.y) free.anim = { t0: performance.now(), ms: 300, from, to, snap: false };
+        else { free.anim = null; Object.assign(free, { x: from.x, y: from.y, k }); saveFree(); }
+      };
       let lastPlaceKey = "";
       let lastClip = "";
+      let lastMask = "";
+      const petWin = { x: NaN, y: NaN };
+      let petTracking = false, petGrab = null;   // petGrab: 따라오는 중 커서가 몸을 잡은 자리   // 펫 프로세스가 커서를 직접 따라 창을 옮기는 중 (이때 여기서 창을 옮기면 서로 밀어 끊김)
+      let petBox = "";   // 펫 창: 마지막으로 알린 몸 영역
+      const movePet = (pose) => {   // 펫 창: 캔버스는 창 아래 가운데, 창을 화면 좌표로 옮김
+        const cx = (innerWidth - W * pose.k) / 2, cy = innerHeight - H * pose.k;
+        const wx = Math.round(pose.x - cx), wy = Math.round(pose.y - cy);
+        if (petTracking) petWin.x = petWin.y = NaN;   // 끝난 뒤 다시 계산한 자리로 옮기게
+        else if (wx !== petWin.x || wy !== petWin.y) { petWin.x = wx; petWin.y = wy; PET.move(wx, wy); }
+        return { x: cx, y: cy };
+      };
       const place = () => {
         const now = performance.now();
         const home = homePose();
-        let { k, x, y } = home;
+        if (link.open || link.follow?.shown) { link.home = home; canvas.style.display = bubble.style.display = "none"; lastPlaceKey = ""; return; }   // 펫 창이 대신 보여 줌
+        const dock = dockPose(home, now);
+        let { k, x, y } = dock;
         let introOn = intro.phase !== "done", vo = 0;
         if (introOn && !intro.begun) {   // 호스트 화면(입력 카드)이 뜨고 잠잠해진 뒤에 등장: 창이 막 떠서 메인 스레드가 바쁜 구간의 끊김을 안 보이게 (최대 8초 대기)
           if (home.card && !intro.cardAt) intro.cardAt = now;
@@ -248,16 +397,25 @@
           } else {
             const p = ease((now - intro.moveStart) / 900);
             vo = 1 - p;
-            k = intro.from.k + (home.k - intro.from.k) * p; x = intro.from.x + (home.x - intro.from.x) * p; y = intro.from.y + (home.y - intro.from.y) * p;
+            k = intro.from.k + (dock.k - intro.from.k) * p; x = intro.from.x + (dock.x - intro.from.x) * p; y = intro.from.y + (dock.y - intro.from.y) * p;
             if (p >= 1) { intro.phase = "done"; introOn = false; setRes(1); veil.remove(); bubble.style.left = ""; bubble.style.fontSize = ""; bubble.style.padding = ""; }
           }
           veil.style.opacity = vo; veil.style.pointerEvents = intro.phase === "center" ? "auto" : "none";
           canvas.style.opacity = intro.phase === "center" ? ease((now - intro.start) / 300) : "";   // 아바타는 흐린 배경 위에서 서서히 등장
         }
-        const show = introOn || k >= 0.42;
+        const show = introOn || k >= SHOW_K;
         canvas.style.display = bubble.style.display = show ? "block" : "none";
         if (!show) return;
         curK = k;
+        shown.k = k; shown.x = x; shown.y = y;
+        const loose = PET || dock !== home;   // 자유 위치·펫 창: 말풍선 꼬리가 머리 위에 오게
+        if (PET) {
+          ({ x, y } = movePet(dock));
+          // 클릭을 받을 몸 영역(창 안 좌표)을 펫 프로세스에 알려 줌. 커서가 이 안에 있는지는 펫 프로세스가 직접 확인 (산책·도망 중엔 없음)
+          const r = bodyRect(x, y, k), b = walking() || fleeX !== 0 ? null : { l: Math.round(r.l), t: Math.round(r.t), r: Math.round(r.r), b: Math.round(r.b) };
+          const sig = JSON.stringify(b);
+          if (sig !== petBox) { petBox = sig; PET.send({ type: "hitbox", box: b }); }
+        }
         // 승인·질문 카드가 입력 영역에 떠 있으면 캐릭터에서 카드 모양(둥근 모서리 포함)만 잘라 낸다.
         // 캐릭터는 계속 위(z=30)에 두므로 테마를 끈 상태의 불투명한 입력 영역 배경에도 몸이 가려지지 않는다.
         // (placeKey 비교보다 먼저: 입력창 위치가 그대로여도 카드가 뜨고 사라지거나 테마 전환으로 반지름이 바뀌면 갱신)
@@ -276,11 +434,16 @@
         }
         if (clip !== lastClip) { canvas.style.clipPath = clip; lastClip = clip; }
         // 배치에 쓰는 값이 그대로면 건너뜀: 매 프레임 side 클래스를 뗐다 붙이며 레이아웃을 3번씩 강제하던 것 방지
+        // 허리 아래가 잘린 그림이라 화면 아래에서 띄우면 띄운 만큼 아래쪽을 흐리게 (펫 창은 늘, 붙는 동안 걷힘. 꼬마 모습은 발까지 그려져 안 흐림)
+        const lift = PET ? (petDocked ? 0 : H * k * (1 - snapP)) : innerHeight - (y + H * k);
+        const fade = Math.round(Math.max(0, Math.min(lift, H * k * 0.18)) * (1 - Math.min(1, Math.max(0, bodyW))));
         const r0 = home.r;
         const placeKey = introOn ? "" : [k, x, y, innerWidth, innerHeight, fleeX, Math.round(bodyW * 40), r0 && r0.left, r0 && r0.right, r0 && r0.top, r0 && r0.bottom,
-          bubble.textContent, bubble.className.replace(/\bside\b/g, "").trim()].join("|");
+          bubble.textContent, bubble.className.replace(/\bside\b/g, "").trim(), fade, loose].join("|");
         if (placeKey && placeKey === lastPlaceKey) return;
         lastPlaceKey = placeKey;
+        const mask = fade > 0 ? `linear-gradient(to bottom, #000 calc(100% - ${fade}px), transparent)` : "";
+        if (mask !== lastMask) { canvas.style.maskImage = canvas.style.webkitMaskImage = mask; lastMask = mask; }
         canvas.style.width = W * k + "px"; canvas.style.height = H * k + "px";
         if (fleeX !== 0) bubble.style.display = "none";
         canvas.style.left = x + "px"; canvas.style.top = y + "px";
@@ -293,10 +456,10 @@
           return;
         }
         const card = home.card;
-        bubble.style.right = "10px";
+        bubble.style.right = loose ? Math.max(10, innerWidth - (x + W * k / 2 + 55)) + "px" : "10px";   // 꼬리(말풍선 오른쪽 55px)를 머리 가운데에
         bubble.style.maxWidth = Math.max(150, visW * k * 1.1) + "px";
         bubble.style.top = Math.max(8, headTop - bubble.offsetHeight - 10) + "px";
-        if (card) {
+        if (card && home.r) {
           const r = home.r, bl = bubble.offsetLeft, bt = bubble.offsetTop, b = { left: bl, top: bt, right: bl + bubble.offsetWidth, bottom: bt + bubble.offsetHeight };   // 등장 애니메이션(transform) 영향 없는 레이아웃 크기
           if (b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top) {
             bubble.classList.add("side");
@@ -321,6 +484,7 @@
         }, delay);
       };
       const say = (text, ms = 3500, mutter = false, kind) => {
+        relay("say", [text, ms, mutter, kind]);
         bubble.textContent = text; bubble.classList.add("show");
         bubble.classList.toggle("mutter", mutter);   // 혼잣말: 점선 말풍선 + 생각하는 시선
         lastSayAt = performance.now();
@@ -330,7 +494,7 @@
         kind = kind || (mutter ? "mutter" : "other");
         try { window.dispatchEvent(new CustomEvent("dsc:say", { detail: { text, ms, kind } })); } catch {}
       };
-      const hush = () => { clearTimeout(bubbleTimer); bubble.classList.remove("show"); };
+      const hush = () => { relay("hush", []); clearTimeout(bubbleTimer); bubble.classList.remove("show"); };
 
       // ---------- 버튜버식 움직임 (얼굴 추적처럼) ----------
       // 이 모델은 VBridger식 리깅: 머리 = AngleX/Y/Z, 몸 = PositionX/Y/Z·LeanInput(물리 엔진이 늦게 따라감),
@@ -538,15 +702,25 @@
             // 떨림은 너무 빨라 가슴 물리가 따라오지 못하므로, 0.2초 안팎으로 몸을 위아래로 툭툭 쳐서 가슴이 그 박자에 출렁이게 함 (잦아들면 같이 약해짐)
             if (now > shiverBobAt) { bobKick((shiverBobSign = -shiverBobSign) * 40 * Math.pow(1 - se / 5, 1.5)); shiverBobAt = now + 170 + Math.random() * 90; }
           }
-          if (fleeX > 0 && !walk.phase) bodyZ += Math.sin(T * 16) * 8;   // 도망가며 종종걸음
-          // 산책: 걸어가는 쪽(왼쪽)으로 몸을 돌리고 통통 걸음
-          walk.face += ((walk.phase === "out" || walk.phase === "in" ? 1 : 0) - walk.face) * Math.min(1, dt * 5);
-          if (walk.face > 0.01) {
+          if (fleeX !== 0 && !walk.phase) bodyZ += Math.sin(T * 16) * 8;   // 도망가며 종종걸음
+          // 산책: 걸어가는 쪽으로 몸을 돌리고 통통 걸음 (walk.face: -1 = 왼쪽을 봄, 1 = 오른쪽을 봄). 돌아올 땐 반대쪽을 봄
+          const faceTo = walk.phase === "out" ? walk.dir : walk.phase === "in" ? -walk.dir : 0;
+          walk.face += (faceTo - walk.face) * Math.min(1, dt * 5);
+          const wa = Math.abs(walk.face);
+          if (wa > 0.01) {
             const ph = T * Math.PI * 2 * 1.8, wf = walk.face;
-            yaw = yaw * (1 - wf) - 22 * wf; pitch -= 2 * wf; roll += Math.sin(ph) * 2.5 * wf;
-            bodyX -= 6 * wf; bodyY += Math.abs(Math.sin(ph)) * 6 * wf; bodyZ += Math.sin(ph) * 4 * wf;
+            yaw = yaw * (1 - wa) + 22 * wf; pitch -= 2 * wa; roll += Math.sin(ph) * 2.5 * wa;
+            bodyX += 6 * wf; bodyY += Math.abs(Math.sin(ph)) * 6 * wa; bodyZ += Math.sin(ph) * 4 * wa;
           }
           if (walkCheck) walkCheck(now);
+          // 끌기·던지기: 움직이는 반대쪽으로 몸이 쏠리고(관성) 머리카락·치마·리본은 물리로 따라 흔들림. 손을 멈추거나 놓으면 잦아듦
+          const lastSample = drag.samples.length ? drag.samples[drag.samples.length - 1][0] : 0;
+          if (!drag.on || now - lastSample > 60) { const f = Math.max(0, 1 - dt * 5); carry.vx *= f; carry.vy *= f; }
+          const cvx = clamp(carry.vx / 1600, -1, 1), cvy = clamp(carry.vy / 1600, -1, 1);
+          if (Math.abs(cvx) + Math.abs(cvy) > 0.002) {
+            bodyX -= cvx * 16; bodyZ -= cvx * 14; roll -= cvx * 12; yaw += cvx * 8;
+            bodyY -= cvy * 12; pitch += cvy * 10;
+          }
           // 삐짐: 0.35초에 턱을 들고 고개를 홱 돌리고, 끝나기 1.2초 전부터 천천히 돌아옴
           const sk = now < sulkUntil ? Math.min(sstep((now - sulkStart) / 350), sstep((sulkUntil - now) / 1200)) : 0;
           let peek = 0;   // 몰래 보기 정도 (0 = 외면, 1 = 사용자 쪽을 봄)
@@ -845,8 +1019,12 @@
           setTimeout(() => speak("chest_calm", 2800), 3000);
         }
       };
-      const flee = () => {   // 오른쪽 밖으로 사라졌다가 10초 뒤 돌아옴
-        const off = (W + 80) * curK, go = (from, to, ms, done) => {
+      // 가까운 쪽 화면 끝(-1 = 왼쪽, 1 = 오른쪽)과 그쪽으로 완전히 나가는 거리. 높이는 그대로 두고 좌우로만 움직임.
+      const nearSide = () => { const a = area(), c = shown.x - fleeX + W * curK / 2; return c - a.l < a.r - c ? -1 : 1; };
+      const outDistance = (dir) => { const a = area(), x = shown.x - fleeX; return dir < 0 ? -(x + W * curK - a.l + 20) : a.r - x + 20; };
+      const flee = () => {   // 가까운 쪽 화면 밖으로 사라졌다가 10초 뒤 같은 쪽에서 돌아옴
+        if (drag.pending || drag.on || link.open || link.follow) return;   // 예약된 사이 집었거나 펫 창으로 넘어갔으면 취소
+        const off = outDistance(nearSide()), go = (from, to, ms, done) => {
           const t0 = performance.now();
           const step = () => {
             const p = Math.min(1, (performance.now() - t0) / ms), e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
@@ -856,16 +1034,18 @@
           requestAnimationFrame(step);
         };
         hush();
-        go(0.01, off, 700, () => setTimeout(() => go(off, 0, 1100, () => { fleeX = 0; setTimeout(() => speak("lower_after", 4000), 400); }), 10000));
+        go(Math.sign(off) * 0.01, off, 700, () => setTimeout(() => go(off, 0, 1100, () => { fleeX = 0; setTimeout(() => speak("lower_after", 4000), 400); }), 10000));
       };
       // ---------- 산책 ----------
       const WALK_SPEED = 320;   // 걷는 속도 (px/초)
       const walkEase = (p) => { const a = 0.12, m = 2 * a * (1 - a); return p < a ? p * p / m : p > 1 - a ? 1 - (1 - p) * (1 - p) / m : (p - a / 2) / (1 - a); };   // 출발·도착만 부드럽게, 중간은 일정한 속도
+      // 산책의 예약 타이머와 걷기 애니메이션은 walk.timers·walk.slideId로 묶어, 집어 들면 한 번에 멈춘다
+      const walkLater = (fn, ms) => { const id = setTimeout(() => { walk.timers = walk.timers.filter((t) => t !== id); fn(); }, ms); walk.timers.push(id); return id; };
       const slide = (from, to, done) => {
-        const t0 = performance.now(), ms = Math.abs(to - from) / WALK_SPEED * 1000;
+        const t0 = performance.now(), ms = Math.abs(to - from) / WALK_SPEED * 1000, id = ++walk.slideId;
         let cancelled = false;
         const step = () => {
-          if (cancelled) return;
+          if (cancelled || id !== walk.slideId) return;   // 멈춤
           const p = ms ? Math.min(1, (performance.now() - t0) / ms) : 1;
           fleeX = from + (to - from) * walkEase(p);
           if (p < 1) requestAnimationFrame(step); else done();
@@ -873,26 +1053,30 @@
         requestAnimationFrame(step);
         return () => { cancelled = true; };
       };
-      const walkBack = () => {   // 오른쪽 화면 밖에서 제자리까지 걸어 들어옴
+      const cancelWalk = () => {   // 출발 전(말하는 중)에 집어 들면 산책을 취소. 출발한 뒤에는 제자리에 올 때까지 집을 수 없음
+        if (walk.phase !== "ready") return;
+        for (const t of walk.timers) clearTimeout(t);
+        walk.timers = []; walk.slideId++; walk.phase = "";
+      };
+      const walkBack = () => {   // 나갔던 쪽 화면 밖에서 원래 자리까지 걸어 들어옴
         if (walk.phase !== "away") return;
-        clearTimeout(walk.timer);
-        walk.phase = "in";
-        const homeLeft = canvas.getBoundingClientRect().left - fleeX;
-        slide(innerWidth - homeLeft + 20, 0, () => {
+        for (const t of walk.timers) clearTimeout(t);
+        walk.timers = []; walk.phase = "in";
+        slide(walk.out, 0, () => {
           fleeX = 0; walk.phase = "";
-          setTimeout(() => { if (!walk.phase) speak("walk_back", 3500); }, 450);   // 정면으로 돌아선 뒤 인사
+          walkLater(() => { if (!walk.phase) speak("walk_back", 3500); }, 450);   // 정면으로 돌아선 뒤 인사
         });
       };
-      const startWalk = () => {   // 말하고 → 왼쪽으로 돌아서 → 화면 밖까지 걸어감 → 8~14초 뒤 돌아옴
-        if (SLEEP.state !== "active") return;   // 절전 중에는 산책 시작 안 함
-        walk.phase = "ready";
+      const startWalk = () => {   // 말하고 → 가까운 쪽으로 돌아서 → 화면 밖까지 걸어감(높이 그대로) → 8~14초 뒤 같은 쪽으로 돌아옴
+        if (SLEEP.state !== "active") return;
+        walk.phase = "ready"; walk.dir = nearSide();
         speak("walk_out", 2200);
-        setTimeout(() => {
+        walkLater(() => {
           walk.phase = "out"; hush();
-          setTimeout(() => slide(0, -(canvas.getBoundingClientRect().right + 20), () => {
+          walkLater(() => { walk.out = outDistance(walk.dir); slide(0, walk.out, () => {
             walk.phase = "away";
-            walk.timer = setTimeout(walkBack, 8000 + Math.random() * 6000);
-          }), 700);   // 꼬마 모습으로 바뀐 뒤 출발
+            walkLater(walkBack, 8000 + Math.random() * 6000);
+          }); }, 700);   // 꼬마 모습으로 바뀐 뒤 출발
         }, 2300);
       };
       walkCheck = (now) => {
@@ -901,6 +1085,7 @@
         if (walk.phase || now < walk.next) return;
         walk.next = now + 30000;   // 지금은 갈 때가 아니면 30초 뒤 다시 확인
         if (intro.phase !== "done" || mood !== "idle" || running || waitingKind || now < sulkUntil || now < inputLockedUntil || fleeX !== 0) return;
+        if (drag.pending || drag.on || free.anim || link.open || link.opening || link.follow) return;   // 누르거나 들고 있을 때·움직이는 중·펫 창으로 넘긴 동안은 산책 안 함 (펫 창이 대신 산책)
         if (bubble.classList.contains("show") || now - walk.lastTouch < 60000 || now - lastSayAt < 15000 || document.hidden) return;
         walk.next = now + (240 + Math.random() * 240) * 1000;   // 다음 산책은 4~8분 뒤
         startWalk();
@@ -913,6 +1098,7 @@
         if (SLEEP.state !== "asleep" && SLEEP.state !== "leaving") return;
         clearTimeout(sleepTimer); sleepTimer = 0;
         cancelSleepSlide?.(); cancelSleepSlide = null;
+        if (link.open || link.follow?.shown) { SLEEP.state = "active"; fleeX = 0; return; }
         hush();
         SLEEP.state = "waking";
         app.ticker.start();
@@ -926,9 +1112,10 @@
         SLEEP.lastActive = performance.now();
         startWake();
       };
-      for (const t of ["pointerdown", "pointermove", "mousedown", "keydown", "wheel", "touchstart"]) addEventListener(t, sleepActivity, { passive: true, capture: true });
+      for (const t of (PET ? [] : ["pointerdown", "pointermove", "mousedown", "keydown", "wheel", "touchstart"])) addEventListener(t, sleepActivity, { passive: true, capture: true });
       const sleepGo = () => {
-        if (SLEEP.state !== "active" || intro.phase !== "done" || fleeX !== 0 || walk.phase) return;
+        if (PET || drag.on || drag.pending || free.anim || SLEEP.state !== "active" || intro.phase !== "done" || fleeX !== 0 || walk.phase) return;
+        if (link.open || link.follow?.shown) { SLEEP.lastActive = performance.now(); return; }   // 펫 창으로 밖에 꺼내 둔 동안엔 절전 안 함
         SLEEP.state = "leaving";
         speak("sleep_out", 2600);
         sleepTimer = setTimeout(() => {
@@ -944,7 +1131,7 @@
         }, 2500);
       };
       const onLower = (now) => {
-        if (fleeX > 0 || now < low.cooldownUntil || now - low.last < 180) return;
+        if (fleeX !== 0 || now < low.cooldownUntil || now - low.last < 180) return;
         if (now - low.last > 8000) low.count = 0;
         low.last = now; low.count++;
         if (low.count <= 2) speak("lower1", 4000);
@@ -1072,28 +1259,130 @@
         speak("body");
       };
       // 캔버스는 클릭을 통과시키므로, 문서 단계에서 캐릭터 위 클릭만 가로챔 (투명한 곳은 뒤 화면으로 그대로)
+      // 짧게 눌렀다 떼면 터치, 누른 채 6px 넘게 움직이면 집어 들어 옮김
+      // 머리에서 아래로 쓸어내리면 끌기 대신 냄비(빠르게)·세숫대야(천천히)
       const POT_MS = 130;   // 머리에서 이 시간(ms) 안에 55px 넘게 쓸어내리면 냄비, 아니면 세숫대야
       let swallowClick = false, strokeFrom = null;   // strokeFrom: 머리를 누른 채 쓸어내리는지 지켜보는 중
+      const pt = (e) => PET ? [e.screenX, e.screenY] : [e.clientX, e.clientY];   // 창 안 = 창 좌표, 펫 창 = 화면 좌표
+      // 몸 전체 영역(캔버스 양옆 빈 곳·머리 위 여백 제외). 펫 창은 클릭을 통과시키다 이 안에 커서가 오면 받기 시작하므로,
+      // 반투명한 머리카락 끝처럼 그림 판정이 빗나가는 곳도 집을 수 있게 이 영역으로 판단한다
+      const overBody = (cx, cy) => {
+        if (canvas.style.display === "none" || fleeX !== 0) return false;
+        const c = canvas.getBoundingClientRect(), r = bodyRect(c.left, c.top, curK);
+        return cx >= r.l && cx <= r.r && cy >= r.t && cy <= r.b;
+      };
+      const walking = () => walk.phase === "out" || walk.phase === "away" || walk.phase === "in";   // 출발한 뒤 ~ 제자리 도착 전
       document.addEventListener("pointerdown", (e) => {
         swallowClick = false; strokeFrom = null;
-        if (e.button !== 0) return;
+        if (e.button !== 0 || walking()) return;   // 산책을 떠난 뒤에는 돌아올 때까지 클릭을 받지 않음 (뒤 화면으로 통과)
         const h = hitAt(e.clientX, e.clientY);
-        if (!h) return;
+        if (!h && !(PET && overBody(e.clientX, e.clientY))) return;
         e.preventDefault(); e.stopPropagation(); swallowClick = true;
-        if (performance.now() >= inputLockedUntil && touchRegion(h[0], h[1], h[2]) === "head") { strokeFrom = { x: e.clientX, y: e.clientY, t: performance.now(), h }; return; }
-        onTouch(h[0], h[1], h[2]);
+        const head = !!h && performance.now() >= inputLockedUntil && touchRegion(h[0], h[1], h[2]) === "head";
+        if (head) strokeFrom = { x: e.clientX, y: e.clientY, t: performance.now(), h };
+        if (intro.phase !== "done" || fleeX !== 0 || link.opening) { if (h && !head) onTouch(h[0], h[1], h[2]); return; }   // 시작 연출·도망·펫 창 여는 중엔 끌기 없음 (머리는 떼는 순간 터치)
+        const [px, py] = pt(e);
+        drag.pending = { id: e.pointerId, sx: px, sy: py, h, ox: px - shown.x, oy: py - shown.y };
+        if (PET) PET.press(true);   // 누르고 있는 동안은 커서가 몸 밖으로 벗어나도 클릭을 계속 받음
+        if (link.supported && link.petState === "none") linkPost("warm");   // 끌 수도 있으니 누르는 순간 펫 창을 숨긴 채 미리 띄움
+        else if (!PET && link.petState === "shown" && !link.open && !link.follow) linkPost("hide");   // 붙은 직후 아직 남은 펫 창이 있으면 바로 숨김
       }, true);
-      document.addEventListener("pointermove", (e) => {   // 머리에서 아래로 쓸어내림: 빠르면 냄비가 떨어지고, 천천히면 세숫대야를 씌움
-        if (!strokeFrom) return;
-        const dy = e.clientY - strokeFrom.y, dx = Math.abs(e.clientX - strokeFrom.x);
-        const el = performance.now() - strokeFrom.t, st = strokeFrom;
-        if (el < POT_MS) { if (dy > 55 && dy > dx * 1.2) { strokeFrom = null; potHit(st.x, st.y); } }   // 확실히 빠르게 쓸어야 냄비
-        else if (dy > 40 && dy > dx * 0.8) { strokeFrom = null; putBasin(); }   // 그보다 느리면 세숫대야 (짧고 조금 비스듬해도 인정)
+      // 빠르면 냄비, 느리면 세숫대야 (확실히 빠르게 쓸어야 냄비, 짧고 조금 비스듬해도 세숫대야)
+      const strokeKind = (st, e) => {
+        const dy = e.clientY - st.y, dx = Math.abs(e.clientX - st.x);
+        if (performance.now() - st.t < POT_MS) return dy > 55 && dy > dx * 1.2 ? "pot" : null;
+        return dy > 40 && dy > dx * 0.8 ? "basin" : null;
+      };
+      document.addEventListener("pointermove", (e) => {
+        if (strokeFrom) {
+          const st = strokeFrom, kind = strokeKind(st, e);
+          if (kind) { strokeFrom = null; if (drag.pending) { drag.pending = null; if (PET) PET.press(false); } return kind === "pot" ? potHit(st.x, st.y) : putBasin(); }
+          const dy = e.clientY - st.y, dx = Math.abs(e.clientX - st.x);
+          // 아직 6px 안 움직였거나 아래로 쓸어내리는 중일 수 있으면 끌기 시작을 미룸, 끌 수 없는 때(시작 연출·도망 중)는 떼는 순간 터치
+          if (!drag.pending || Math.hypot(dx, dy) < 6 || (dy > 0 && dy > dx * 0.8)) return;
+          strokeFrom = null;
+        }
+        const p = drag.pending;
+        if (!p || e.pointerId !== p.id) return;
+        // 손을 뗀 이벤트(pointerup)를 놓쳤으면 버튼 상태로 알아채고 그 자리에서 놓음 (펫 창이 커서 아래로 따라오며 다시 그려질 때 등)
+        if (e.buttons === 0) return endDrag(e, false);
+        const [px, py] = pt(e), now = performance.now();
+        if (!drag.on) {
+          if (Math.hypot(px - p.sx, py - p.sy) < 6) return;
+          cancelWalk();   // 산책 가려고 말하던 중이면 취소
+          drag.on = true; drag.samples = []; free.anim = null; free.k = shown.k; petDocked = false;
+          try { document.documentElement.setPointerCapture(e.pointerId); } catch {}
+          document.documentElement.classList.add("dsc-grabbing");
+          until.sweat = Infinity;   // 들고 있는 동안 식은땀
+          walk.lastTouch = now;
+          if (PET) {   // 펫 창을 직접 끌 때도 창은 펫 프로세스가 커서를 읽는 즉시 옮김 (이벤트 → 페이지 계산 → 되돌려 받는 왕복은 몇 프레임 늦고 끊김)
+            petGrab = { x: p.ox, y: p.oy }; petTracking = true;
+            drag.x = px - p.ox; drag.y = py - p.oy; drag.samples = [[now, px, py]];
+            PET.send({ type: "track", on: true, grab: petGrab, off: { x: (innerWidth - W * free.k) / 2, y: innerHeight - H * free.k } });
+          }
+        }
+        if (PET && petTracking) { e.preventDefault(); return; }   // 이후 위치·속도는 펫 프로세스가 보내는 cursor 메시지로 갱신
+        drag.x = px - p.ox; drag.y = py - p.oy;
+        drag.samples.push([now, px, py]);
+        while (drag.samples.length > 2 && now - drag.samples[0][0] > 100) drag.samples.shift();
+        const [t0, x0, y0] = drag.samples[0], dt = Math.max(16, now - t0) / 1000;
+        carry.vx += ((px - x0) / dt - carry.vx) * 0.5; carry.vy += ((py - y0) / dt - carry.vy) * 0.5;
+        if (!PET) followPet(now);
+        e.preventDefault();
       }, true);
-      document.addEventListener("pointerup", () => {   // 쓸어내리지 않고 떼면 원래 머리 터치 반응
-        if (!strokeFrom) return;
-        const st = strokeFrom; strokeFrom = null; onTouch(st.h[0], st.h[1], st.h[2]);
+      // 끄는 도중 몸이 창 밖으로 나가면 같은 자리에 펫 창을 띄워 커서를 따라오게 함 (창 안 그림은 창 경계에서 잘리므로)
+      // 펫 창이 준비된 뒤에만 따라붙고, 위치는 한 번에 하나만 보냄 (여러 요청이 겹치면 도착 순서가 뒤섞여 예전 자리로 튐)
+      const followPet = (now) => {
+        if (!link.supported || link.open) return;
+        const k = free.k;
+        // 몸의 15% 넘게 창 밖으로 나가야 넘김 (제자리는 창 오른쪽 끝에서 4px 안쪽이라 살짝만 끌어도 넘어가던 것 방지)
+        const out = bodyOut({ k, x: drag.x, y: drag.y });
+        const s = screenOf(drag.x, drag.y), pose = { k, x: s.x, y: s.y };
+        if (!link.follow) {
+          if (!out) return;
+          if (link.petState !== "hidden") {   // 아직 준비 중이면 상태만 다시 확인 (그동안은 창 안에서 끄는 그대로)
+            if (now - link.peek > 250) { link.peek = now; if (link.petState === "none") linkPost("warm"); else poll(); }
+            return;
+          }
+          link.follow = { shown: false }; link.last = "";
+          linkPost("open", { from: pose, to: pose, follow: true, grab: { x: drag.pending?.ox ?? 0, y: drag.pending?.oy ?? 0 }, seq: ++link.seq });   // grab: 커서가 몸을 잡은 자리 (몸 위치 = 커서 − grab)
+        }
+        // 열린 뒤 위치는 보내지 않음: 펫 프로세스가 커서를 직접 읽어 따라옴 (HTTP 왕복은 수십~수백 ms 걸려 끌 때 끊김)
+      };
+      // 손을 놓을 때 펫 창이 따라오던 중이면: 창 밖이면 펫 창이 이어받고, 창 안으로 돌아왔으면 펫 창을 숨기고 창 안에서 이어 감
+      const finishFollow = (vx, vy) => {
+        const f = link.follow;
+        link.follow = null; link.queue = []; lastPlaceKey = "";   // 숨김으로 끝날 수도 있으니 이번 회차 반응은 버림 (이어받으면 syncPet이 다시 맞춤)
+        // 놓을 때도 끌어낼 때와 같은 기준 (몸 가운데로 보면 일부만 밖으로 끌고 놓았을 때 창 안으로 처리돼 다시 붙었음)
+        // 미끄러진 뒤 자리 기준. 펫 창이 이미 보이면 나올 때 기준, 아직 안 떴으면 release와 같은 넘어갈 때 기준 (둘 사이에서 놓쳐 둘로 보이지 않게)
+        const outside = bodyOut({ k: free.k, x: drag.x + vx * GLIDE, y: drag.y + vy * GLIDE }, !f.shown);
+        if (outside && f.shown) { linkPost("send", { list: [["release", [vx, vy]]] }); enterLink(); return true; }
+        if (!outside) linkPost("hide");
+        return false;   // 아직 안 떴으면 평소처럼 놓기 (창 밖이면 펫 창을 다시 열어 미끄러짐)
+      };
+      const endDrag = (e, cancel) => {
+        const p = drag.pending;
+        if (!p || e.pointerId !== p.id) return;
+        drag.pending = null; strokeFrom = null;
+        if (PET) PET.press(false);
+        if (!drag.on) { if (!cancel && p.h) onTouch(p.h[0], p.h[1], p.h[2]); return; }   // 끌지 않고 뗌 = 터치 (그림 위에서 눌렀을 때만)
+        drag.on = false;
+        if (PET && petTracking) { petTracking = false; petGrab = null; PET.send({ type: "track", on: false }); }   // 이제부터 창 이동은 다시 페이지가 맡음 (놓은 뒤 미끄러짐·붙기)
+        try { document.documentElement.releasePointerCapture(e.pointerId); } catch {}
+        document.documentElement.classList.remove("dsc-grabbing");
+        until.sweat = performance.now() + 400;
+        const moving = performance.now() - drag.samples[drag.samples.length - 1][0] < 80;   // 멈췄다가 놓으면 던지지 않음
+        const vx = moving ? carry.vx : 0, vy = moving ? carry.vy : 0;
+        if (link.follow && finishFollow(vx, vy)) return;
+        release(vx, vy);
+      };
+      document.addEventListener("pointerup", (e) => {
+        const st = strokeFrom; strokeFrom = null;
+        if (drag.pending) return endDrag(e, false);
+        if (st) onTouch(st.h[0], st.h[1], st.h[2]);   // 쓸어내리지 않고 떼면 원래 머리 터치 반응
       }, true);
+      addEventListener("blur", () => { if (drag.pending) endDrag({ pointerId: drag.pending.id }, !drag.on); });   // 창 포커스를 잃으면 끄기를 끝냄
+      document.addEventListener("pointercancel", (e) => endDrag(e, true), true);
       for (const type of ["pointerup", "mousedown", "mouseup", "click", "dblclick"]) {
         document.addEventListener(type, (e) => {
           if (!swallowClick) return;
@@ -1104,9 +1393,25 @@
       let hoverCheck = 0;
       document.addEventListener("mousemove", (e) => {   // 캐릭터 위에서는 손가락 커서
         const now = performance.now(); if (now - hoverCheck < 80) return; hoverCheck = now;
-        const over = !!hitAt(e.clientX, e.clientY);
+        const over = !walking() && !!hitAt(e.clientX, e.clientY);
         document.documentElement.classList.toggle("dsc-hover", over);
       }, { passive: true });
+      if (PET) document.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!walking() && overBody(e.clientX, e.clientY)) PET.menu(); }, true);
+      // 휠로 크기 조절: 몸 위에서 올리면 커지고 내리면 작아짐 (몸 아래 가운데를 기준으로). 들고 있을 때·움직이는 중·산책·도망 중엔 무시
+      //   펫 창 = 0.45~1.25배 (최대는 펫 창 440×540에 캐릭터와 말풍선이 들어가는 크기)
+      //   창 안 = 자유 위치일 때만 0.42배~그 창에 들어가는 최대치. 제자리에 붙어 있으면 크기는 자동이라 휠은 대화 스크롤 그대로
+      const PET_K_MIN = 0.45, PET_K_MAX = 1.25;
+      document.addEventListener("wheel", (e) => {
+        if (intro.phase !== "done" || !free.on || !overBody(e.clientX, e.clientY)) return;
+        e.preventDefault(); e.stopPropagation();   // 캐릭터 위에서는 대화 스크롤 대신 크기 조절
+        if (drag.on || free.anim || walk.phase || fleeX !== 0) return;
+        const kMin = PET ? PET_K_MIN : SHOW_K, kMax = PET ? PET_K_MAX : Math.min(1.25, (innerHeight * 0.45) / visH);
+        const k0 = Math.min(free.k, kMax), k = Math.min(kMax, Math.max(kMin, k0 * Math.exp(-e.deltaY * 0.0012)));
+        if (k === k0) return;
+        if (PET) { free.x += W * (k0 - k) / 2; free.y += H * (k0 - k); }   // 창 안은 비율 자리(몸 가운데·아래 끝)라 그대로 둬도 아래 가운데 기준
+        free.k = k;
+        if (!PET) saveFree(false);
+      }, { capture: true, passive: false });
 
       // ---------- Harness 상태 → 반응 ----------
       listeners.tool = (text) => {
@@ -1179,14 +1484,143 @@
       };
 
       // 시작 인사 (가운데 연출 중): 0.7초 뒤 5.8초 동안
-      setTimeout(() => { say(TEXT.hello, 5800, false, "reaction"); play("sway", 2300); }, 700);
+      if (!PET) setTimeout(() => { if (!link.open) { say(TEXT.hello, 5800, false, "reaction"); play("sway", 2300); } }, 700);
       window.__dsc = { say, play, setMood, flashExp, sulking: () => performance.now() < sulkUntil, sulkPeeks: () => sulkPeeks.map((p) => ({ at: Math.round(p.at), flip: p.flip })), walk: () => { if (!walk.phase && fleeX === 0) startWalk(); return walk.phase; }, walking: () => walk.phase, sleep: () => SLEEP.state, regionAt: (cx, cy) => { const h = hitAt(cx, cy); return h && touchRegion(h[0], h[1], h[2]); }, fleeX: () => fleeX, bubble: () => bubble.classList.contains("show") ? bubble.textContent : "", lines: TEXT, voice: (s) => { voiceState = s && s.speaking !== false ? s : null; } };   // 확인용
+
+      // ---------- 바깥 펫 창 연결 (창 안 캐릭터 쪽) ----------
+      // 플러그인 호스트가 /deepseek-harness-kr/pet/ 아래에서 펫 프로세스를 띄우고 메시지를 이어 줌 (ASAR 패치 방식에는 없어서 꺼짐)
+      linkPost = (path, body = {}) => {
+        window.__dscPetUsed = true;   // 플러그인이 내려갈 때 펫 창을 숨길지 판단
+        return fetch(PET_URL + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+          .then((r) => (r.ok ? r.json() : null)).then((s) => { if (s?.state) link.petState = s.state; return s; }).catch(() => null);
+      };
+      // 펫 창이 보이기 시작할 때 지금 표정·자세를 한 번에 맞춤 (따라오는 동안·숨어 있는 동안 바뀐 것, 예: 작업이 끝나 로딩 표정이 꺼짐)
+      const syncPet = () => {
+        const left = moodUntil ? Math.max(1, moodUntil - performance.now()) : 0;
+        link.queue.push(...Object.keys(hold).map((name) => ["setExp", [name, !!hold[name]]]), ["setMood", [mood, left]]);
+        if (!bubble.classList.contains("show")) link.queue.push(["hush", []]);
+      };
+      const enterLink = () => {   // 펫 창이 보이기 시작함 → 창 안 캐릭터는 숨기고 그리기를 멈춤
+        const already = !!link.follow?.shown;
+        link.open = true; link.opening = 0; link.last = ""; window.__dscPetUsed = true;
+        skipIntro(); free.anim = null; drag.pending = null; drag.on = false;
+        if (!already) syncPet();
+        try { app.ticker.stop(); } catch {}
+      };
+      const leaveLink = () => {   // 펫 창이 제자리에 붙었거나 닫힘 → 창 안 제자리로
+        if (!link.open) { link.opening = 0; return; }   // 아직 안 떴으면 창 안 캐릭터는 그대로
+        link.open = false; link.opening = 0; link.queue = [];
+        SLEEP.state = "active"; SLEEP.lastActive = performance.now();
+        free.on = false; free.anim = null; saveFree(); lastPlaceKey = "";   // 제자리로 (창이 좁으면 구석, 매 프레임 다시 계산)
+        // 창 안 캐릭터가 다시 그려지는 프레임에 바로 펫 창을 숨김 (펫 창이 스스로 숨을 때까지 둘이 겹쳐 보이던 것 방지)
+        requestAnimationFrame(() => { if (!link.open && !link.follow) linkPost("hide"); });
+        try { app.ticker.start(); } catch {}
+      };
+      const poll = () => {
+        if (link.polling) return;
+        link.polling = true;
+        fetch(PET_URL + "poll", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((s) => {
+          link.polling = false;
+          if (!s) return;
+          link.supported = !!s.supported; link.petState = s.state || "none";
+          if (link.boot && Number.isInteger(s.seq)) link.seq = Math.max(link.seq, s.seq);   // 새로 불러온 화면은 회차 번호를 이어받음
+          for (const ev of s.events || []) {
+            if (ev.seq !== undefined && ev.seq !== link.seq) continue;   // 이전 회차(붙고 숨은 뒤 늦게 남은) 알림은 버림
+            // 보임: 이쪽이 연(따라오게 했거나 던져서 연) 경우만 받음. 이미 숨기라고 한 뒤 늦게 온 알림은 무시
+            if (ev.type === "shown") { if (link.follow) { if (!link.follow.shown) { link.follow.shown = true; syncPet(); } } else if (link.opening) enterLink(); }
+            // 붙음·닫힘·오류: 창 안 캐릭터로 돌아옴. 숨음: 펫 창이 맡고 있던 때만 (방금 이쪽이 숨긴 따라오기 창이면 무시)
+            else if (ev.type === "attach" || ev.type === "closed" || ev.type === "error") { link.follow = null; leaveLink(); }
+            else if (ev.type === "hidden" && link.open) leaveLink();
+            else if (ev.type === "hidden" && link.follow?.shown) link.follow.shown = false;   // 따라오던 펫 창이 숨음 → 창 안 캐릭터가 다시 보이게
+          }
+          // 이 화면을 새로 불러왔는데 펫 창이 떠 있음 (처음 한 번만: 붙은 직후 잠깐 남은 펫 창 때문에 다시 숨으면 안 됨)
+          if (link.boot && s.state === "shown" && !link.open) { if (Number.isInteger(s.seq)) link.seq = s.seq; enterLink(); }
+          link.boot = false;
+        }).catch(() => { link.polling = false; });
+      };
+      if (PET_URL) {
+        poll();
+        // 처음 끌 때 펫 프로세스가 준비되길 기다리지 않게(약 2.5초, 그동안 창 밖에서 캐릭터가 잘리다 튐), 화면이 자리 잡고 한가할 때 숨긴 채 미리 띄워 둠.
+        // 시작 인사·작업 중·창이 안 보일 때는 미루고, 한가한 때(requestIdleCallback)에 한 번만. 시작하는 동안은 호스트가 낮은 우선순위로 돌림
+        const warmUp = (tries = 0) => {
+          if (link.open || link.follow || (link.supported && link.petState !== "none")) return;
+          if (!link.supported) { poll(); if (tries < 8) setTimeout(() => warmUp(tries + 1), 3000); return; }   // 호스트가 늦게 뜨면 처음 조회가 실패했을 수 있어 다시 물어봄 (지원 안 하면 포기)
+          if (intro.phase !== "done" || running || document.hidden) { setTimeout(() => warmUp(tries), 3000); return; }
+          (window.requestIdleCallback || ((f) => setTimeout(f, 0)))(() => { if (link.petState === "none") linkPost("warm"); }, { timeout: 5000 });
+        };
+        setTimeout(warmUp, 5000);
+        setInterval(() => {
+          if (link.opening && performance.now() - link.opening > 15000) link.opening = 0;   // 펫 창이 끝내 안 뜨면 포기
+          if (!link.open && !link.opening && !link.follow) return;
+          if (link.open || link.follow) {   // 붙을 자리(DSH 창의 제자리, 창이 좁으면 구석)와 소품·옷을 펫 창에 알려 줌
+            const h = dockTarget(link.home || homePose()), d = screenOf(h.x - fleeX, h.y);
+            const tl = screenOf(0, 0), br = screenOf(innerWidth, innerHeight);   // DSH 창 영역 (펫 창이 다시 붙을지 판단)
+            const dock = { k: +h.k.toFixed(3), x: Math.round(d.x), y: Math.round(d.y), win: { l: Math.round(tl.x), t: Math.round(tl.y), r: Math.round(br.x), b: Math.round(br.y) } }, outfit = window.__dscOutfit || {};
+            const sig = JSON.stringify([dock, outfit]);
+            if (sig !== link.last) { link.last = sig; link.queue.push(["dock", [dock]], ["outfit", [outfit]]); }
+            if (link.queue.length) { const list = link.queue; link.queue = []; linkPost("send", { list }); }
+          }
+          poll();
+        }, 150);
+        // 입 모양(외부 음성 상태)은 따로 자주 보냄
+        setInterval(() => {
+          if (!link.open || voiceState === link.voiceSent) return;
+          link.voiceSent = voiceState;
+          linkPost("send", { list: [["voice", [voiceState]]] });
+        }, 60);
+      }
+
+      // ---------- 펫 창 쪽: 창 안 캐릭터가 보낸 반응을 그대로 재생 ----------
+      if (PET) {
+        const local = { say, play, setMood, flashExp, setExp, hush };
+        PET.on((m) => {
+          if (m.type === "cursor") {   // 따라오는 중 커서 (화면 좌표). 몸 위치 = 커서 − 잡은 자리
+            if (!drag.on || !petGrab) return;
+            const now = performance.now();
+            drag.x = m.x - petGrab.x; drag.y = m.y - petGrab.y;
+            drag.samples.push([now, m.x, m.y]);
+            while (drag.samples.length > 2 && now - drag.samples[0][0] > 100) drag.samples.shift();
+            const [t0, x0, y0] = drag.samples[0], dt = Math.max(16, now - t0) / 1000;
+            carry.vx += ((m.x - x0) / dt - carry.vx) * 0.5; carry.vy += ((m.y - y0) / dt - carry.vy) * 0.5;
+          } else if (m.type === "power") {   // 창이 숨으면 그리기를 멈춰 CPU·GPU를 쓰지 않음 (숨은 창도 백그라운드 제한이 꺼져 있어 계속 그려짐)
+            if (!m.on) { petTracking = false; petGrab = null; }
+            try { m.on ? app.ticker.start() : app.ticker.stop(); } catch {}
+          } else if (m.type === "open") {   // 창 밖으로 던진 자리에서 나타나 남은 거리만큼 미끄러짐. follow면 놓을 때까지 창 안 커서를 따라옴
+            try { app.ticker.start(); } catch {}
+            // 이전 회차에 남은 상태(끄는 중·식은땀·산책·도망)를 모두 지우고 시작
+            for (const t of walk.timers) clearTimeout(t);
+            walk.timers = []; walk.slideId++; walk.phase = ""; fleeX = 0; drag.pending = null; PET.press(false);
+            petDocked = false; free.on = true; Object.assign(free, m.from);
+            petGrab = m.follow ? (m.grab || { x: 0, y: 0 }) : null; petTracking = !!m.follow;
+            PET.send({ type: "track", on: !!m.follow, grab: petGrab, off: { x: (innerWidth - W * m.from.k) / 2, y: innerHeight - H * m.from.k } });   // 따라오기: 펫 프로세스가 커서를 따라 창을 옮기고 커서를 보내 줌
+            drag.on = !!m.follow; drag.x = m.from.x; drag.y = m.from.y; drag.samples = [[performance.now(), m.from.x + (petGrab?.x ?? 0), m.from.y + (petGrab?.y ?? 0)]];
+            free.anim = m.follow ? null : { t0: performance.now(), ms: 300, from: m.from, to: keepIn(m.to), snap: false };
+            until.sweat = m.follow ? Infinity : 0;
+            movePet(m.from); PET.send({ type: "placed" });
+          } else if (m.type === "home") {   // 우클릭 메뉴: 창으로 돌아가기
+            if (petDock) free.anim = { t0: performance.now(), ms: 650, from: { ...shown }, to: null, snap: true };
+            else PET.send({ type: "attach" });
+          } else if (m.type === "cmd") {
+            for (const [fn, a] of m.list || []) {
+              if (fn === "outfit") window.__dscOutfit = a[0];
+              else if (fn === "dock") petDock = a[0];
+              else if (fn === "voice") voiceState = a[0];
+              else if (fn === "release" && drag.on) {   // 창 밖에서 놓음 → 여기서 이어서 미끄러지거나 붙음
+                petGrab = null; petTracking = false; PET.send({ type: "track", on: false });
+                drag.on = false; until.sweat = performance.now() + 400; release(a[0], a[1]);
+              } else if (Object.hasOwn(local, fn) && Array.isArray(a)) local[fn](...a);
+            }
+          }
+        });
+        try { app.ticker.stop(); } catch {}   // 처음엔 숨은 채 대기 (open 이 오면 그리기 시작)
+        PET.send({ type: "ready" });
+      }
       setInterval(() => {
         const nowRunning = !!document.querySelector(UI.stop);
         const kind = document.querySelector(UI.approval + ', [class*="Zf6DNq_card"]') ? "approval"
           : document.querySelector('[class*="Nksazq_card"], [class*="wnLwla_card"]') ? "question" : null;
         const cfg = window.__dscSleep || {};
-        SLEEP.enabled = cfg.enabled !== false;
+        SLEEP.enabled = !PET && cfg.enabled !== false;
         const cfgMin = Number(cfg.minutes);
         SLEEP.minutes = Number.isFinite(cfgMin) ? Math.min(60, Math.max(0.5, cfgMin)) : 1;
         // 잠든 동안에도 대기 카드를 확인하고 기존 반응으로 이어감
