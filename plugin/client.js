@@ -582,6 +582,7 @@ function settingsPage(ctx, form, updater, keys) {
     const fields = [
       ['character', ko ? '캐릭터와 말풍선' : 'Character and speech bubbles'],
       ['intro', ko ? '시작할 때 등장 연출' : 'Intro on startup'],
+      ['appIcon', ko ? '앱 바로가기 아이콘 (Windows)' : 'App shortcut icon (Windows)'],
       ['theme', ko ? '파스텔 테마' : 'Pastel theme'],
       ['translation', ko ? '한국어 언어팩' : 'Korean language pack'],
     ]
