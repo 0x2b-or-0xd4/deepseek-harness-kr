@@ -322,6 +322,65 @@ test('settings page records the shortcut by pressing keys instead of typing it',
   } finally { h.dom.window.close() }
 })
 
+test('drag modifier and pet window shortcut are configurable and defaulted', () => {
+  const defaults = readLive(Config({}))
+  assert.equal(defaults.dragModifier, 'alt')
+  assert.equal(defaults.petToggleKey, 'Ctrl+Shift+P')
+  const custom = readLive(Config({ dragModifier: 'none', petToggleKey: '' }))
+  assert.equal(custom.dragModifier, 'none')
+  assert.equal(custom.petToggleKey, '')
+})
+
+test('settings page exposes the drag modifier and pet window shortcut', () => {
+  const h = clientHarness({ character: true, theme: false, translation: false, dragModifier: 'alt', petToggleKey: 'Ctrl+Shift+P' })
+  try {
+    const ctx = h.ctx(); h.client.apply(ctx)
+    const Page = h.pages.get(packageName + '#deepseek-harness-kr')
+    const html = renderToStaticMarkup(React.createElement(Page, { view: 'page' }))
+    assert.match(html, /Move character \(hold while dragging\)/)
+    assert.match(html, /aria-label="Drag modifier"/)
+    assert.match(html, /Alt \(Option\)<\/option>/)
+    assert.match(html, /Off \(both buttons\)/)
+    assert.match(html, /aria-label="Record pet window shortcut"/)
+    assert.match(html, /value="Ctrl\+Shift\+P"/)
+    assert.match(html, /id="deepseek-harness-kr-pet-shortcut-hint"/)
+    ctx.dispose()
+  } finally { h.dom.window.close() }
+})
+
+test('pet window shortcut calls the toggle the character exposes', () => {
+  const h = clientHarness({ character: false, theme: false, translation: false, petToggleKey: 'Ctrl+Shift+P' })
+  try {
+    const ctx = h.ctx(); h.client.apply(ctx)
+    let calls = 0
+    h.dom.window.__dscPetToggle = () => { calls++ }
+    const press = (extra = {}, target = h.dom.window) => {
+      const event = new h.dom.window.KeyboardEvent('keydown', { key: 'P', code: 'KeyP', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true, ...extra })
+      target.dispatchEvent(event)
+      return event
+    }
+    assert.equal(press().defaultPrevented, true)
+    assert.equal(calls, 1)
+    press({ repeat: true })   // 키를 계속 누르고 있어도 한 번만
+    assert.equal(calls, 1)
+    press({ shiftKey: false })   // 다른 조합은 무시
+    assert.equal(calls, 1)
+    const input = h.dom.window.document.createElement('input')
+    h.dom.window.document.body.append(input)
+    press({}, input)   // 입력 칸 안에서는 무시
+    assert.equal(calls, 1)
+    ctx.dispose()
+  } finally { h.dom.window.close() }
+})
+
+test('character source supports modifier drag and a pet window toggle', async () => {
+  const source = await readFile(new URL('../../assets/dsc.js', import.meta.url), 'utf8')
+  for (const code of [source, bundle]) {
+    assert.match(code, /const both = \(e\.buttons & 3\) === 3 \|\| modifierHeld\(e\)/)
+    assert.match(code, /window\.__dscPetToggle = petToggle/)
+  }
+})
+
 test('sleep minutes are bounded in schema and client settings', () => {
   assert.equal(Config.dict.idleSleepMinutes.meta.min, 0.5)
   assert.equal(Config.dict.idleSleepMinutes.meta.max, 60)

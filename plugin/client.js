@@ -21,6 +21,15 @@ const sleepMinutes = (value) => {
 // ---------- 단축키 ----------
 // 설정 칸을 눌러 원하는 키 조합을 그대로 눌러 등록하고, 실제 입력도 같은 규칙으로 해석한다.
 const SHORTCUT_HINT_ID = 'deepseek-harness-kr-shortcut-hint'
+const PET_SHORTCUT_HINT_ID = 'deepseek-harness-kr-pet-shortcut-hint'
+// 캐릭터를 집어 옮길 때 누르고 있을 보조 키 선택지 (값, 한국어, English)
+const DRAG_MODIFIERS = [
+  ['alt', 'Alt (Option)', 'Alt (Option)'],
+  ['ctrl', 'Ctrl', 'Ctrl'],
+  ['meta', 'Mac Cmd / Win', 'Cmd / Win'],
+  ['shift', 'Shift', 'Shift'],
+  ['none', '사용 안 함 (좌우 버튼 함께)', 'Off (both buttons)'],
+]
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'CapsLock'])
 const MODIFIER_ALIASES = new Map([
   ['ctrl', 'ctrl'], ['control', 'ctrl'],
@@ -199,6 +208,7 @@ function startCharacter(life) {
   stylesheet(life, 'character.css')
   // 캐릭터를 끄거나 플러그인이 내려가면 바깥 펫 창도 숨김 (이 화면에서 펫 창을 쓴 적이 있을 때만)
   life.add(() => {
+    delete window.__dscPetToggle
     if (!window.__dscPetUsed) return
     delete window.__dscPetUsed
     try { window.fetch(PET_ROOT + 'hide', { method: 'POST', keepalive: true }).catch(() => {}) } catch {}
@@ -567,6 +577,41 @@ function updateSection(updater, ko) {
         ? button(t('다시 확인', 'Check again'), () => updater.check(), busy) : null))
 }
 
+// 단축키 입력 칸: 칸을 눌러 두면 누른 키 조합을 그대로 저장한다. Esc 취소 · Backspace/Delete 지우기 · Tab은 포커스 이동.
+function ShortcutField({ label, hintId, hint, value, placeholder, ariaLabel, ko, disabled, onChange }) {
+  const [recording, setRecording] = React.useState(false)
+  const [held, setHeld] = React.useState('')
+  const capture = (event) => {
+    const action = shortcutKeyDown(event)
+    const stop = () => { setRecording(false); setHeld('') }
+    if (action.action === 'leave') { stop(); return }
+    event.preventDefault()
+    event.stopPropagation()
+    const target = event.currentTarget
+    if (action.action === 'cancel') { stop(); target.blur(); return }
+    if (action.action === 'clear') { stop(); void onChange(''); target.blur(); return }
+    if (action.action === 'wait') { setHeld(action.held); return }
+    stop(); void onChange(action.combo); target.blur()
+  }
+  return React.createElement(React.Fragment, null,
+    React.createElement('label', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 } },
+      React.createElement('span', null, label),
+      React.createElement('input', {
+        type: 'text',
+        readOnly: true,
+        'aria-label': ariaLabel,
+        'aria-describedby': hintId,
+        placeholder: recording ? (ko ? '키를 누르세요…' : 'Press keys…') : placeholder,
+        style: { width: 150, cursor: 'pointer', textAlign: 'center', borderColor: recording ? '#7aa7ff' : undefined },
+        value: recording ? held : (value ?? ''),
+        disabled,
+        onFocus: () => { if (disabled) return; setRecording(true); setHeld('') },
+        onBlur: () => { setRecording(false); setHeld('') },
+        onKeyDown: capture,
+      })),
+    React.createElement('p', { id: hintId, style: { margin: 0, opacity: 0.7 } }, hint))
+}
+
 function settingsPage(ctx, form, updater, keys) {
   return function FeatureSettings({ view }) {
     const state = React.useSyncExternalStore((fn) => form.subscribe(fn), () => form.getSnapshot(), () => form.getSnapshot())
@@ -574,8 +619,6 @@ function settingsPage(ctx, form, updater, keys) {
     React.useSyncExternalStore((fn) => updater.subscribe(fn), () => updater.getSnapshot(), () => updater.getSnapshot())
     const [error, setError] = React.useState('')
     const [pending, setPending] = React.useState(false)
-    const [recordingShortcut, setRecordingShortcut] = React.useState(false)
-    const [heldShortcut, setHeldShortcut] = React.useState('')
     const ko = locale.active.toLowerCase().startsWith('ko')
     if (view === 'summary') return React.createElement('span', null, ko ? '캐릭터 · 테마 · 한국어' : 'Character · Theme · Korean')
     if (state.status !== 'ready') return React.createElement('p', { role: 'status' }, ko ? '설정을 불러오는 중입니다.' : 'Loading settings…')
@@ -601,19 +644,8 @@ function settingsPage(ctx, form, updater, keys) {
       React.createElement('input', { type: 'checkbox', checked: state.value?.[field] === true, disabled: off, onChange: (event) => change(field, event.target.checked) }))
     const bodyType = state.value?.bodyType || 'default'
     const shortcutValue = state.value?.characterToggleKey ?? 'Ctrl+Shift+D'
-    // 칸을 눌러 켜 두면, 누른 키를 그대로 단축키로 저장한다. Esc 취소 · Backspace/Delete 지우기.
-    const captureShortcut = (event) => {
-      const action = shortcutKeyDown(event)
-      const stopRecording = () => { setRecordingShortcut(false); setHeldShortcut('') }
-      if (action.action === 'leave') { stopRecording(); return }
-      event.preventDefault()
-      event.stopPropagation()
-      const target = event.currentTarget
-      if (action.action === 'cancel') { stopRecording(); target.blur(); return }
-      if (action.action === 'clear') { stopRecording(); void change('characterToggleKey', ''); target.blur(); return }
-      if (action.action === 'wait') { setHeldShortcut(action.held); return }
-      stopRecording(); void change('characterToggleKey', action.combo); target.blur()
-    }
+    const petShortcutValue = state.value?.petToggleKey ?? 'Ctrl+Shift+P'
+    const dragModifier = state.value?.dragModifier || 'alt'
     return React.createElement('div', { style: { display: 'grid', gap: 16 } },
       ...fields.map(([field, label]) => React.createElement('label', { key: field, style: row },
         React.createElement('span', null, label),
@@ -638,23 +670,35 @@ function settingsPage(ctx, form, updater, keys) {
       React.createElement('section', { 'aria-label': ko ? '단축키' : 'Shortcut', style: { display: 'grid', gap: 10, borderTop: '1px solid rgba(127,127,127,.25)', paddingTop: 14 } },
         React.createElement('strong', null, ko ? '단축키' : 'Shortcut'),
         React.createElement('label', { style: row },
-          React.createElement('span', null, ko ? '캐릭터 토글 단축키 (비우면 사용 안 함)' : 'Toggle character shortcut (empty to disable)'),
-          React.createElement('input', {
-            type: 'text',
-            readOnly: true,
-            'aria-label': ko ? '캐릭터 토글 단축키 입력' : 'Record toggle character shortcut',
-            'aria-describedby': SHORTCUT_HINT_ID,
-            placeholder: recordingShortcut ? (ko ? '키를 누르세요…' : 'Press keys…') : 'Ctrl+Shift+D',
-            style: { width: 150, cursor: 'pointer', textAlign: 'center', borderColor: recordingShortcut ? '#7aa7ff' : undefined },
-            value: recordingShortcut ? heldShortcut : shortcutValue,
+          React.createElement('span', null, ko ? '캐릭터 이동 (누른 채 끌기)' : 'Move character (hold while dragging)'),
+          React.createElement('select', {
+            'aria-label': ko ? '캐릭터 이동 보조 키' : 'Drag modifier',
+            value: dragModifier,
             disabled: off,
-            onFocus: () => { if (off) return; setRecordingShortcut(true); setHeldShortcut('') },
-            onBlur: () => { setRecordingShortcut(false); setHeldShortcut('') },
-            onKeyDown: captureShortcut,
-          })),
-        React.createElement('p', { id: SHORTCUT_HINT_ID, style: { margin: 0, opacity: 0.7 } },
-          ko ? '칸을 누른 뒤 원하는 키 조합을 그대로 누르면 등록됩니다. Esc 취소, Backspace로 지우기'
-            : 'Click the field, then press the keys you want. Esc cancels, Backspace clears.')),
+            onChange: (event) => change('dragModifier', event.target.value),
+          }, ...DRAG_MODIFIERS.map(([value, koLabel, enLabel]) => React.createElement('option', { key: value, value }, ko ? koLabel : enLabel)))),
+        React.createElement(ShortcutField, {
+          label: ko ? '캐릭터 토글 단축키 (비우면 사용 안 함)' : 'Toggle character shortcut (empty to disable)',
+          hintId: SHORTCUT_HINT_ID,
+          hint: ko ? '칸을 누른 뒤 원하는 키 조합을 그대로 누르면 등록됩니다. Esc 취소, Backspace로 지우기'
+            : 'Click the field, then press the keys you want. Esc cancels, Backspace clears.',
+          value: shortcutValue,
+          placeholder: 'Ctrl+Shift+D',
+          ariaLabel: ko ? '캐릭터 토글 단축키 입력' : 'Record toggle character shortcut',
+          ko, disabled: off,
+          onChange: (combo) => change('characterToggleKey', combo),
+        }),
+        React.createElement(ShortcutField, {
+          label: ko ? '펫 창 내보내기·돌아오기 단축키 (비우면 사용 안 함)' : 'Pet window shortcut (empty to disable)',
+          hintId: PET_SHORTCUT_HINT_ID,
+          hint: ko ? '캐릭터를 바깥 펫 창으로 내보내고 다시 불러옵니다. 칸을 누른 뒤 키 조합을 누르세요.'
+            : 'Moves the character out to the pet window and back. Click the field, then press the keys you want.',
+          value: petShortcutValue,
+          placeholder: 'Ctrl+Shift+P',
+          ariaLabel: ko ? '펫 창 단축키 입력' : 'Record pet window shortcut',
+          ko, disabled: off,
+          onChange: (combo) => change('petToggleKey', combo),
+        })),
       error ? React.createElement('p', { role: 'alert' }, error) : null,
       React.createElement(TtsSection, { form, keys, ko, writable: state.writable, tts: state.value?.tts }),
       updateSection(updater, ko))
@@ -738,8 +782,10 @@ function apply(ctx) {
       window.__dscSleep = { enabled: value.idleSleep !== false, minutes: sleepMinutes(value.idleSleepMinutes) }
       // 시작 등장 연출 여부: 캐릭터가 처음 뜰 때 읽는다 (끄면 가운데 인사 없이 바로 제자리에)
       window.__dscIntro = { enabled: value.intro !== false }
+      // 캐릭터 이동 보조 키: 캐릭터가 포인터 이벤트마다 읽는다 (다시 띄우지 않음)
+      window.__dscDrag = { modifier: value.dragModifier || 'alt' }
     }
-    life.add(() => { delete window.__dscOutfit; delete window.__dscSleep; delete window.__dscIntro })
+    life.add(() => { delete window.__dscOutfit; delete window.__dscSleep; delete window.__dscIntro; delete window.__dscDrag })
     life.add(form.subscribe(sync))
     // 단축키로 캐릭터 토글: 설정의 character 스위치를 뒤집는다 (설정 화면과 같은 저장소·같은 마운트/정리 경로)
     let heldToggleKey = '', togglePending = false
@@ -766,6 +812,28 @@ function apply(ctx) {
       if ((event.code || event.key.toLowerCase()) === heldToggleKey) heldToggleKey = ''
     })
     life.listen(window, 'blur', () => { heldToggleKey = '' })
+    // 단축키로 바깥 펫 창으로 내보내기·돌아오기 (창 안 캐릭터가 노출한 토글을 부른다)
+    let heldPetKey = ''
+    const petToggleListener = (event) => {
+      if (event.repeat) return
+      const snapshot = form.getSnapshot()
+      const combo = snapshot.value?.petToggleKey ?? 'Ctrl+Shift+P'
+      const toggle = window.__dscPetToggle
+      if (!toggle || !parseShortcut(combo)) return
+      // 텍스트 입력 중엔 발동하지 않게 (글자를 지우는 Shift+화살표 같은 조합 보호)
+      const el = event.target
+      if (el && (el.isContentEditable || /^(input|textarea|select)$/i.test(el.tagName))) return
+      if (!matchesShortcut(combo, event)) return
+      event.preventDefault()
+      if (heldPetKey || snapshot.status !== 'ready') return
+      heldPetKey = event.code || event.key.toLowerCase()
+      try { toggle() } catch { console.warn('펫 창 토글 실패') }
+    }
+    life.listen(window, 'keydown', petToggleListener)
+    life.listen(window, 'keyup', (event) => {
+      if ((event.code || event.key.toLowerCase()) === heldPetKey) heldPetKey = ''
+    })
+    life.listen(window, 'blur', () => { heldPetKey = '' })
     life.add(ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
       name: 'plugins.row.config', key: PLUGIN_ID + '#' + ENTRY_ID,
     }, settingsPage(ctx, form, updater, keys))))

@@ -1862,10 +1862,26 @@
         if (performance.now() - st.t < POT_MS) return dy > 55 && dy > dx * 1.2 ? "pot" : null;
         return dy > 40 && dy > dx * 0.8 ? "basin" : null;
       };
+      // 집어 옮기기 보조 키: 설정(window.__dscDrag.modifier)이 켜져 있으면 왼쪽 버튼만 눌러도 옮길 수 있다.
+      // 기존처럼 왼쪽·오른쪽 버튼을 함께 누르는 방식도 그대로 동작한다.
+      const dragModifier = () => {
+        const value = window.__dscDrag && window.__dscDrag.modifier;
+        return value === "alt" || value === "ctrl" || value === "meta" || value === "shift" ? value : "none";
+      };
+      const modifierHeld = (e) => {
+        if ((e.buttons & 1) !== 1) return false;
+        const modifier = dragModifier();
+        if (modifier === "alt") return !!e.altKey;
+        if (modifier === "ctrl") return !!e.ctrlKey;
+        if (modifier === "meta") return !!e.metaKey;
+        if (modifier === "shift") return !!e.shiftKey;
+        return false;
+      };
       document.addEventListener("pointermove", (e) => {
         if (PET && petPanelOpen && petPanel && petPanel.contains(e.target)) return;   // 패널 안 조작은 캐릭터 끌기로 이어지지 않음
-        // 왼쪽·오른쪽을 함께 누른 채 움직이면 곧바로 집어 옮긴다. 머리 쓰다듬기·가슴 끌기 판정과 6px 기준을 거치지 않는다
-        const both = (e.buttons & 3) === 3;
+        // 왼쪽·오른쪽을 함께 누르거나, 보조 키(기본 Alt)를 누른 채 움직이면 곧바로 집어 옮긴다.
+        // 머리 쓰다듬기·가슴 끌기 판정과 6px 기준을 거치지 않는다
+        const both = (e.buttons & 3) === 3 || modifierHeld(e);
         if (chestFrom && !both && e.pointerId === chestFrom.id) {
           const dy = e.clientY - chestFrom.y, dx = e.clientX - chestFrom.x, now = performance.now();
           if (!chestDragging) {
@@ -2340,6 +2356,22 @@
           link.voiceSent = voiceState;
           linkPost("send", { list: [["voice", [voiceState]]] });
         }, 60);
+      }
+
+      // ---------- 단축키: 바깥 펫 창으로 내보내기 / 돌아오기 ----------
+      // 창 안 캐릭터만. 내보내기는 준비된(또는 만들기 시작할) 펫 창을 지금 자리에서 열고,
+      // 돌아오기는 펫 창을 숨겨 poll('hidden') → leaveLink()가 창 안 제자리로 되돌린다.
+      if (!PET) {
+        const petOpenPose = () => (SLEEP.state === "active" && shown.k > 0 ? { k: shown.k, x: shown.x, y: shown.y } : dockTarget(homePose()));
+        const petToggle = () => {
+          if (link.open || link.follow?.shown) { link.opening = 0; linkPost("hide"); return; }   // 펫 창이 떠 있음 → 창 안으로
+          if (!PET_URL) return;
+          if (link.petState === "shown") { enterLink(); return; }   // 다른 화면에서 열어 둔 펫 창이 이어받게
+          const pose = petOpenPose(), s = screenOf(pose.x, pose.y);
+          link.opening = performance.now();
+          linkPost("open", { from: { k: pose.k, x: s.x, y: s.y }, to: { k: pose.k, x: s.x, y: s.y }, seq: ++link.seq });
+        };
+        window.__dscPetToggle = petToggle;
       }
 
       // ---------- 펫 창 쪽: 창 안 캐릭터가 보낸 반응을 그대로 재생 ----------
