@@ -378,6 +378,8 @@ test('character source supports modifier drag and a pet window toggle', async ()
   for (const code of [source, bundle]) {
     assert.match(code, /const both = \(e\.buttons & 3\) === 3 \|\| modifierHeld\(e\)/)
     assert.match(code, /window\.__dscPetToggle = petToggle/)
+    assert.match(code, /link\.queue\.push\(\["drag", \[dragModifier\(\)\]\]\)/)
+    assert.match(code, /fn === "drag"\) window\.__dscDrag = \{ modifier: a\[0\] \}/)
   }
 })
 
