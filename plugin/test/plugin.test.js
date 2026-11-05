@@ -368,10 +368,14 @@ test('settings page exposes the drag key and pet window shortcut', () => {
     assert.match(html, /aria-label="Record canvas hide\/show shortcut"/)
     assert.match(html, /value="Ctrl\+Shift\+H"/)
     assert.match(html, /id="deepseek-harness-kr-canvas-hint"/)
-    // 공통 안내는 '단축키' 제목 바로 뒤, 첫 항목(이동 키) 앞에 한 번만 나온다
+    // 공통 안내는 '단축키 - 캐릭터와 말풍선' 제목 바로 뒤, 첫 항목(설정 토글 단축키) 앞에 한 번만 나온다
     const hintAt = html.indexOf('Click the field, then press the keys you want')
-    const firstFieldAt = html.indexOf('Record drag key')
+    const firstFieldAt = html.indexOf('Record character and speech bubbles toggle shortcut')
     assert.ok(hintAt > 0 && hintAt < firstFieldAt)
+    // 비활성화되는 줄들(이동 키·캔버스·펫 창)보다 설정 토글 단축키가 위에 온다
+    assert.ok(firstFieldAt < html.indexOf('Record drag key'))
+    assert.ok(firstFieldAt < html.indexOf('Record canvas hide/show shortcut'))
+    assert.ok(firstFieldAt < html.indexOf('Record pet window shortcut'))
     assert.equal((html.match(/Click the field, then press the keys you want/g) || []).length, 1)
     // 스위치가 꺼져 있으면 캔버스 단축키 칸은 비활성 모양(disabled)이다
     assert.match(html, /aria-label="Record canvas hide\/show shortcut"[^>]*disabled=""/)
