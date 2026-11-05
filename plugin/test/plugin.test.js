@@ -372,6 +372,10 @@ test('settings page exposes the drag key and pet window shortcut', () => {
     assert.match(html, /aria-label="Record canvas hide\/show shortcut"/)
     assert.match(html, /value="Ctrl\+Shift\+H"/)
     assert.match(html, /id="deepseek-harness-kr-canvas-hint"/)
+    // 공통 안내는 단축키 줄들 아래에 한 번만 나온다
+    assert.equal((html.match(/Click the field, then press the keys you want/g) || []).length, 1)
+    // 스위치가 꺼져 있으면 캔버스 단축키 칸은 비활성 모양(disabled)이다
+    assert.match(html, /aria-label="Record canvas hide\/show shortcut"[^>]*disabled=""/)
     // 스위치는 단축키 칸 바로 왼쪽(같은 줄의 입력 바로 앞)에 온다
     assert.ok(html.indexOf('Enable canvas hide/show') < html.indexOf('Record canvas hide/show shortcut'))
     assert.match(html, /Enable canvas hide\/show[^]{0,400}?Record canvas hide\/show shortcut/)

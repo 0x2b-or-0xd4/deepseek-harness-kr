@@ -591,7 +591,7 @@ function updateSection(updater, ko) {
 }
 
 // 단축키 입력 칸: 칸을 눌러 두면 누른 키 조합을 그대로 저장한다. Esc 취소 · Backspace/Delete 지우기 · Tab은 포커스 이동.
-function ShortcutField({ label, control, hintId, hint, value, placeholder, ariaLabel, ko, disabled, onChange }) {
+function ShortcutField({ label, control, hintId, hint, value, placeholder, ariaLabel, ko, disabled, inactive, onChange }) {
   const [recording, setRecording] = React.useState(false)
   const [held, setHeld] = React.useState('')
   const capture = (event) => {
@@ -607,9 +607,9 @@ function ShortcutField({ label, control, hintId, hint, value, placeholder, ariaL
     stop(); void onChange(action.combo); target.blur()
   }
   return React.createElement(React.Fragment, null,
-    React.createElement(control ? 'div' : 'label', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 } },
-      React.createElement('span', null, label),
-      React.createElement('span', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+    React.createElement(control ? 'div' : 'label', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 24, rowGap: 8 } },
+      React.createElement('span', { style: { opacity: inactive ? 0.55 : 1 } }, label),
+      React.createElement('span', { style: { display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' } },
         control ?? null,
         React.createElement('input', {
           type: 'text',
@@ -617,14 +617,14 @@ function ShortcutField({ label, control, hintId, hint, value, placeholder, ariaL
           'aria-label': ariaLabel,
           'aria-describedby': hintId,
           placeholder: recording ? (ko ? '키를 누르세요…' : 'Press keys…') : placeholder,
-          style: { width: 150, cursor: 'pointer', textAlign: 'center', borderColor: recording ? '#7aa7ff' : undefined },
+          style: { width: 150, cursor: disabled ? 'default' : 'pointer', textAlign: 'center', borderColor: recording ? '#7aa7ff' : undefined, opacity: inactive ? 0.45 : 1 },
           value: recording ? held : (value ?? ''),
           disabled,
           onFocus: () => { if (disabled) return; setRecording(true); setHeld('') },
           onBlur: () => { setRecording(false); setHeld('') },
           onKeyDown: capture,
         }))),
-    React.createElement('p', { id: hintId, style: { margin: 0, opacity: 0.7 } }, hint))
+    hint ? React.createElement('p', { id: hintId, style: { margin: 0, opacity: inactive ? 0.45 : 0.7 } }, hint) : null)
 }
 
 // 이동 키 입력 칸: 수식 키 하나 또는 일반 키 하나를 그대로 등록한다. Esc 취소 · Backspace/Delete 지우기 · Tab은 포커스 이동.
@@ -730,8 +730,8 @@ function settingsPage(ctx, form, updater, keys) {
         React.createElement(DragKeyField, {
           label: ko ? '캐릭터 이동 키 (누른 채 끌기)' : 'Move character key (hold while dragging)',
           hintId: DRAG_HINT_ID,
-          hint: ko ? '캐릭터를 집어 옮길 때 누르고 있어야 하는 키입니다. 칸을 누른 뒤 수식 키(Alt·Ctrl·Shift·Cmd) 하나 또는 일반 키 하나를 누르면 등록됩니다. 비우면 좌우 버튼을 함께 눌러야 하고, Esc 취소, Backspace로 지우기'
-            : 'Hold this key while dragging to move the character. Click the field, then press one modifier (Alt, Ctrl, Shift, Cmd) or one other key. Empty needs both buttons. Esc cancels, Backspace clears.',
+          hint: ko ? '캐릭터를 집어 옮길 때 누르고 있어야 하는 키입니다. 수식 키(Alt·Ctrl·Shift·Cmd) 하나 또는 일반 키 하나를 등록합니다. 비우면 좌우 버튼을 함께 눌러야 합니다.'
+            : 'Hold this key while dragging to move the character. Record one modifier (Alt, Ctrl, Shift, Cmd) or one other key. Empty needs both buttons.',
           value: dragKey,
           ariaLabel: ko ? '캐릭터 이동 키 입력' : 'Record drag key',
           ko, disabled: off,
@@ -740,8 +740,7 @@ function settingsPage(ctx, form, updater, keys) {
         React.createElement(ShortcutField, {
           label: ko ? '캐릭터 토글 단축키 (비우면 사용 안 함)' : 'Toggle character shortcut (empty to disable)',
           hintId: SHORTCUT_HINT_ID,
-          hint: ko ? '칸을 누른 뒤 원하는 키 조합을 그대로 누르면 등록됩니다. Esc 취소, Backspace로 지우기'
-            : 'Click the field, then press the keys you want. Esc cancels, Backspace clears.',
+          hint: '',
           value: shortcutValue,
           placeholder: 'Ctrl+Shift+D',
           ariaLabel: ko ? '캐릭터 토글 단축키 입력' : 'Record toggle character shortcut',
@@ -751,8 +750,8 @@ function settingsPage(ctx, form, updater, keys) {
         React.createElement(ShortcutField, {
           label: ko ? '펫 창 내보내기·돌아오기 단축키 (비우면 사용 안 함)' : 'Pet window shortcut (empty to disable)',
           hintId: PET_SHORTCUT_HINT_ID,
-          hint: ko ? '캐릭터를 바깥 펫 창으로 내보내고 다시 불러옵니다. 칸을 누른 뒤 원하는 키 조합을 그대로 누르면 등록됩니다. Esc 취소, Backspace로 지우기'
-            : 'Moves the character out to the pet window and back. Click the field, then press the keys you want. Esc cancels, Backspace clears.',
+          hint: ko ? '캐릭터를 바깥 펫 창으로 내보내고 다시 불러옵니다.'
+            : 'Moves the character out to the pet window and back.',
           value: petShortcutValue,
           placeholder: 'Ctrl+Shift+P',
           ariaLabel: ko ? '펫 창 단축키 입력' : 'Record pet window shortcut',
@@ -770,14 +769,17 @@ function settingsPage(ctx, form, updater, keys) {
             onChange: (event) => change('canvasToggle', event.target.checked),
           }),
           hintId: CANVAS_HINT_ID,
-          hint: ko ? '왼쪽 스위치를 켜면 캐릭터를 내리지 않고 캔버스만 즉시 숨기고 표시합니다. 칸을 누른 뒤 원하는 키 조합을 그대로 누르면 등록됩니다. Esc 취소, Backspace로 지우기'
-            : 'Turn on the switch to hide and show the canvas instantly without unloading the character. Click the field, then press the keys you want. Esc cancels, Backspace clears.',
+          hint: ko ? '왼쪽 스위치를 켜면 캐릭터를 내리지 않고 캔버스만 즉시 숨기고 표시합니다.'
+            : 'Turn on the switch to hide and show the canvas instantly without unloading the character.',
           value: canvasKeyValue,
           placeholder: 'Ctrl+Shift+H',
           ariaLabel: ko ? '캔버스 숨김/표시 단축키 입력' : 'Record canvas hide/show shortcut',
-          ko, disabled: off,
+          ko, disabled: off || !canvasToggle, inactive: !canvasToggle,
           onChange: (combo) => change('canvasToggleKey', combo),
-        })),
+        }),
+        React.createElement('p', { id: SHORTCUT_HINT_ID, style: { margin: 0, opacity: 0.7 } },
+          ko ? '칸을 누른 뒤 원하는 키 조합을 그대로 누르면 등록됩니다. Esc 취소, Backspace로 지우기'
+            : 'Click the field, then press the keys you want. Esc cancels, Backspace clears.')),
       error ? React.createElement('p', { role: 'alert' }, error) : null,
       React.createElement(TtsSection, { form, keys, ko, writable: state.writable, tts: state.value?.tts }),
       updateSection(updater, ko))
