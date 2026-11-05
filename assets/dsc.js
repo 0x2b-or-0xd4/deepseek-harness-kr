@@ -1310,6 +1310,13 @@
           "[홍조, 하트] …계속 이러시면, 오늘 밤 못 자요…",
           "[홍조, ><] 으… 이제… 그만… 정말로 그만…",
         ],
+        chest_pull_dizzy: [
+          "[어지럼, 홍조] 으으… 자꾸 흔들면… 어지러워요…",
+          "[어지럼, 홍조] 잠깐… 세상이… 빙글빙글 돌아요…",
+          "[어지럼, 하트] 아이… 머리가 핑 돌아서… 못 서겠어요…",
+          "[어지럼, 식은땀] 하아… 그만… 눈앞이 흔들려요…",
+          "[어지럼, 홍조] 으… 어지러워서… 잠깐만 기대도 돼요…?",
+        ],
         chest_drop: [
           "[홍조, ><] 꺅!",
           "[홍조, 눈물] 꺅…! 이, 이건 반칙이에요…!",
@@ -1401,7 +1408,7 @@
           "[홍조] 자는 동안… 계속 곁에 있으셨어요?",
         ],
       };
-      const EXP_NAME = { "홍조": "blush", "><": "squint", "하트": "heart", "얄미운": "smug", "식은땀": "sweat", "어두운": "dark", "눈물": "tears" };
+      const EXP_NAME = { "홍조": "blush", "><": "squint", "하트": "heart", "얄미운": "smug", "식은땀": "sweat", "어두운": "dark", "눈물": "tears", "어지럼": "dizzy" };
       const lastLine = {};
       const speak = (key, ms = 3500) => {
         const list = LINES[key]; if (!list) return;
@@ -1843,6 +1850,7 @@
       // 가슴 끌기는 놓은 직후 부끄러워 떠는 동안에도 바로 다시 잡을 수 있다 (inputLockedUntil은 머리 터치에만 적용)
       const canPullChest = (now) => bodyW <= 0.5 && fleeX === 0 && !walk.phase && intro.phase === "done" && !drag.on && !link.opening && now >= sulkUntil;
       // 3초 넘게 잡은 채로 '흔들어야' 더 자극적인 대사가 나온다 (잡고만 있으면 나오지 않음)
+      // 4초를 넘겨 계속 흔들면 어지러워하는 대사로 바뀐다
       const armChestLong = () => {
         clearInterval(chestLongTimer);
         const startedAt = performance.now();
@@ -1852,7 +1860,8 @@
           const now = performance.now();
           if (now < chestShake.next) return;                                   // 최소 3초는 잡고 있어야
           if (now - chestShake.last > 500 || chestShake.acc < 30) return;      // 그 사이 흔들지 않았으면 대사 없음
-          speak("chest_pull_long", 4000);
+          // 4초를 넘기면 멀미(어지럼) 대사, 그 전에는 자극적인 대사
+          speak(now - startedAt >= 4000 ? "chest_pull_dizzy" : "chest_pull_long", 4000);
           chestShake.acc = 0; chestShake.next = now + 3000;                    // 계속 흔들면 3초마다 한 번씩
         }, 300);
       };
@@ -2518,7 +2527,9 @@
       setInterval(() => {
         const nowRunning = !!document.querySelector(UI.stop);
         const kind = document.querySelector(UI.approval + ', [class*="Zf6DNq_card"]') ? "approval"
-          : document.querySelector('[class*="Nksazq_card"], [class*="wnLwla_card"]') ? "question" : null;
+          // 질문 카드 클래스명은 셸 빌드마다 해시가 바뀌어 곧 죽은 셀렉터가 된다. 셸이 안정적으로 내보내는
+          // data 속성을 먼저 보고, 구버전 셸을 위해 기존 해시도 함께 남긴다.
+          : document.querySelector('[data-question-reply], [data-question-key], [class*="Nksazq_card"], [class*="wnLwla_card"]') ? "question" : null;
         const cfg = window.__dscSleep || {};
         SLEEP.enabled = !PET && cfg.enabled !== false;
         const cfgMin = Number(cfg.minutes);

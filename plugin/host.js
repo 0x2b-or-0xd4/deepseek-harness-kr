@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises'
 import { normalize as normalizeTts } from '../plugins/dsh-tts/src/config.js'
 import { registerSpeechRoutes } from '../plugins/dsh-tts/src/index.js'
 import { createPetHandler, createPetManager, PET_PATH } from './pet-host.js'
+import { applyShortcutIcon } from './app-icon.js'
 
 export const name = 'deepseek-harness-kr'
 export const inject = ['webServer', 'connection']
@@ -63,6 +64,8 @@ export const Config = z.object({
   tts: TtsConfig,
   // 시작할 때 가운데에서 크게 인사하는 등장 연출 (끄면 처음부터 제자리에 뜬다)
   intro: z.boolean().default(true).volatile(),
+  // 앱 바로가기 아이콘을 DeepSeek짱 아이콘으로 (Windows만, 창·작업 표시줄 아이콘은 해당 없음)
+  appIcon: z.boolean().default(true).volatile(),
   // 절전: 입력이 없으면 캐릭터가 화면 밖으로 나가 렌더링을 멈춤
   idleSleep: z.boolean().default(true).volatile(),
   idleSleepMinutes: z.number().min(0.5).max(60).default(1).volatile(),
@@ -99,7 +102,13 @@ export function createAssetHandler(root = assets) {
       const type = types[extname(target)]
       const info = await stat(target)
       if (!type || !info.isFile()) { res.writeHead(404); res.end(); return }
-      res.writeHead(200, { 'content-type': type, 'content-length': info.size, 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff' })
+      // 자산 파일명은 고정이라, 캐시를 막아 두면 새로고침마다 무거운 자산을 통째로 다시 받는다.
+      // 크기·수정시각으로 ETag를 만들고 If-None-Match와 같으면 304로 본문 없이 끝낸다.
+      // 파일이 바뀌면 값도 바뀌므로 갱신은 그대로 반영된다.
+      const etag = `"${info.size.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`
+      const validators = { 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff', etag }
+      if (req.headers['if-none-match'] === etag) { res.writeHead(304, validators); res.end(); return }
+      res.writeHead(200, { 'content-type': type, 'content-length': info.size, ...validators })
       if (req.method === 'HEAD') res.end()
       else await pipeline(createReadStream(target), res)
     } catch (error) {
@@ -119,4 +128,20 @@ export function apply(ctx, config) {
     const unregister = ctx.webServer.register({ kind: 'prefix', path: PET_PATH, handler: createPetHandler(pet, rejection) })
     return () => { unregister?.(); pet.dispose() }
   }, 'deepseek-harness-kr: pet')
+  // 앱 바로가기 아이콘(Windows): 켜면 시작할 때·플러그인 업데이트 후에 적용하고, 끄면 원래 아이콘으로 되돌린다.
+  // 설정은 volatile이라 몇 초마다 확인해 바뀐 경우에만 실행한다(같은 값이면 아무 것도 하지 않음).
+  ctx.effect(() => {
+    let last = null, stopped = false
+    const sync = () => {
+      if (stopped) return
+      const enabled = readLive(config?.appIcon) !== false
+      if (enabled === last) return
+      last = enabled
+      applyShortcutIcon({ assetsDir: assets, enabled }).catch(() => {})
+    }
+    sync()
+    const timer = setInterval(sync, 4000)
+    timer.unref?.()
+    return () => { stopped = true; clearInterval(timer) }
+  }, 'deepseek-harness-kr: app icon')
 }
