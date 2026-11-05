@@ -68,7 +68,7 @@ test('sleep cancels departures, protects intro and wakes for waiting cards', asy
     const halfway = read('fleeX'); assert(halfway > 0)
     events.get('pointermove')(); assert.equal(read('fleeX'), halfway)
     frame(); frame(); assert.equal(read('fleeX'), 0); assert.equal(read('SLEEP.state'), 'active')
-    for (const trigger of ['work', 'disable', 'approval', 'Nksazq_card']) {
+    for (const trigger of ['work', 'disable', 'approval', 'data-question-reply']) {
       read('sleepGo()')
       if (trigger === 'work') working = true
       else if (trigger === 'disable') context.window.__dscSleep.enabled = false
@@ -78,7 +78,7 @@ test('sleep cancels departures, protects intro and wakes for waiting cards', asy
       frame(); working = false; card = null; context.window.__dscSleep.enabled = true; poll()
       timers.clear()
     }
-    for (const waiting of ['approval', 'Nksazq_card']) {
+    for (const waiting of ['approval', 'data-question-reply']) {
       read('sleepGo()'); depart(); frame(); frame(); frame(); frame()
       assert.equal(read('SLEEP.state'), 'asleep'); assert.equal(stopped, true)
       card = waiting; poll()
@@ -403,6 +403,13 @@ test('Host asset route serves only its files and unregisters with the plugin', a
     assert.equal(asset.status, 200)
     assert.deepEqual(await asset.json(), { ok: true })
     assert.equal((await fetch(url + ASSET_PATH + '/model.json', { method: 'HEAD' })).headers.get('content-length'), '11')
+    // 조건부 요청: 같은 자산을 다시 받을 때 304로 본문을 생략한다(파일이 바뀌면 200).
+    const etag = asset.headers.get('etag')
+    assert.match(etag, /^"[0-9a-f]+-[0-9a-f]+"$/)
+    const notModified = await fetch(url + ASSET_PATH + '/model.json', { headers: { 'if-none-match': etag } })
+    assert.equal(notModified.status, 304)
+    assert.equal(await notModified.text(), '')
+    assert.equal((await fetch(url + ASSET_PATH + '/model.json', { headers: { 'if-none-match': '"0-0"' } })).status, 200)
     assert.equal((await fetch(url + ASSET_PATH + '/%2e%2e%2foutside.json')).status, 404)
     assert.equal((await fetch(url + ASSET_PATH + '/..%5coutside.json')).status, 404)
     assert.equal((await fetch(url + ASSET_PATH + '/model.json', { method: 'POST' })).status, 405)
