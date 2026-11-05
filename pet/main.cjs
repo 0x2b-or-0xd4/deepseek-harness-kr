@@ -9,7 +9,7 @@ const { pathToFileURL } = require('node:url')
 const arg = (name) => { const hit = process.argv.find((a) => a.startsWith(`--${name}=`)); return hit ? hit.slice(name.length + 3) : '' }
 const PIPE = arg('dsc-pipe'), ASSETS = arg('dsc-assets'), APP = __dirname
 const OWN = '/__app'   // dscpet://assets 아래에서 이 앱 폴더를 가리키는 경로
-const WIN_W = 440, WIN_H = 540   // 캐릭터(최대 375px)와 머리 위 말풍선이 들어가는 크기
+const WIN_W = 820, WIN_H = 1160   // 전신(최대 990px = 300×3.3배)과 머리 위 말풍선 자리가 들어가는 크기
 
 const MAC = process.platform === 'darwin'
 const SECRET = process.env.DSC_PET_SECRET
@@ -112,13 +112,23 @@ app.whenReady().then(() => {
       case 'track': track(!!message.on, message.grab, message.off); return
       case 'press': force = !!message.on; checkCursor(); return   // 누르고 있는 동안은 커서가 몸 밖이어도 늘 받음
       case 'hitbox': box = message.box && ['l', 't', 'r', 'b'].every((k) => Number.isFinite(message.box[k])) ? message.box : null; checkCursor(); return
+      // 캐릭터 크기에 맞춰 창 크기 조절 (화면 작업 영역 안으로만 제한). 배율 상한이 없어져 창도 함께 커져야 한다
+      case 'fit': {
+        const wa = screen.getPrimaryDisplay().workAreaSize
+        const w = Math.min(Math.round(Number(message.w)), wa.width), h = Math.min(Math.round(Number(message.h)), wa.height)
+        if (!Number.isFinite(w) || !Number.isFinite(h) || w < 80 || h < 80) return
+        const b = win.getBounds()
+        if (b.width !== w || b.height !== h) win.setSize(w, h)
+        return
+      }
       // 이미 보이는 중이어도(따라오기 회차에서 바로 던지기 회차로 넘어간 경우) 지금 회차로 shown을 다시 알림
       case 'placed': if (wanted) { if (!win.isVisible()) win.showInactive(); toHost({ type: 'shown' }) } return
       case 'menu':
         Menu.buildFromTemplate([{ label: '창으로 돌아가기', click: () => toPage({ type: 'home' }) }]).popup({ window: win })
         return
-      // 창 안 캐릭터가 나타나는 프레임에 숨기라고 알려 옴. 1초는 창 안 쪽이 응답하지 않을 때를 위한 대비
-      case 'attach': wanted = false; toHost(message); setTimeout(() => { if (!wanted) hide() }, 1000); return
+      // 창 안 캐릭터가 나타나는 프레임에 숨기라고 알려 옴 (1초는 창 안 쪽이 응답하지 않을 때를 위한 대비)
+      // 곧바로 숨긴다: 창 안 캐릭터가 그리는 한 프레임까지 기다리면 두 캐릭터가 잠깐 겹쳐 보인다
+      case 'attach': wanted = false; toHost(message); hide(); return
       case 'ready': pageReady = true; for (const m of pending.splice(0)) win.webContents.send('dsc', m); toHost(message); return
       default: toHost(message)
     }
