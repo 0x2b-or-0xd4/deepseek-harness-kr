@@ -387,6 +387,32 @@ test('settings page exposes the drag key and pet window shortcut', () => {
   } finally { h.dom.window.close() }
 })
 
+test('canvas shortcut row is disabled while the character setting is off', () => {
+  const h = clientHarness({ character: false, theme: false, translation: false, canvasToggle: true, canvasToggleKey: 'Ctrl+Shift+H' })
+  try {
+    const ctx = h.ctx(); h.client.apply(ctx)
+    const Page = h.pages.get(packageName + '#deepseek-harness-kr')
+    const html = renderToStaticMarkup(React.createElement(Page, { view: 'page' }))
+    assert.match(html, /Unavailable while the character and speech bubbles are off/)
+    assert.match(html, /aria-label="Record canvas hide\/show shortcut"[^>]*disabled=""/)
+    assert.match(html, /aria-label="Enable canvas hide\/show"[^>]*disabled=""/)
+    ctx.dispose()
+  } finally { h.dom.window.close() }
+})
+
+test('settings page explains a hidden canvas instead of implying the setting is off', () => {
+  const h = clientHarness({ character: true, theme: true, translation: true, canvasToggle: true })
+  h.dom.window.__dscCanvasHidden = () => true
+  try {
+    const ctx = h.ctx(); h.client.apply(ctx)
+    const Page = h.pages.get(packageName + '#deepseek-harness-kr')
+    const html = renderToStaticMarkup(React.createElement(Page, { view: 'page' }))
+    assert.match(html, /The canvas is hidden right now \(the character setting is still on\)/)
+    assert.match(html, /Show again/)
+    ctx.dispose()
+  } finally { h.dom.window.close() }
+})
+
 test('pet window shortcut calls the toggle the character exposes', () => {
   const h = clientHarness({ character: false, theme: false, translation: false, petToggleKey: 'Ctrl+Shift+P' })
   try {
