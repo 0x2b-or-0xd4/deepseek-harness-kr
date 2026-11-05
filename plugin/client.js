@@ -22,14 +22,7 @@ const sleepMinutes = (value) => {
 // 설정 칸을 눌러 원하는 키 조합을 그대로 눌러 등록하고, 실제 입력도 같은 규칙으로 해석한다.
 const SHORTCUT_HINT_ID = 'deepseek-harness-kr-shortcut-hint'
 const PET_SHORTCUT_HINT_ID = 'deepseek-harness-kr-pet-shortcut-hint'
-// 캐릭터를 집어 옮길 때 누르고 있을 보조 키 선택지 (값, 한국어, English)
-const DRAG_MODIFIERS = [
-  ['alt', 'Alt (Option)', 'Alt (Option)'],
-  ['ctrl', 'Ctrl', 'Ctrl'],
-  ['meta', 'Mac Cmd / Win', 'Cmd / Win'],
-  ['shift', 'Shift', 'Shift'],
-  ['none', '사용 안 함 (좌우 버튼 함께)', 'Off (both buttons)'],
-]
+const DRAG_HINT_ID = 'deepseek-harness-kr-drag-hint'
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'CapsLock'])
 const MODIFIER_ALIASES = new Map([
   ['ctrl', 'ctrl'], ['control', 'ctrl'],
@@ -91,6 +84,23 @@ function shortcutKeyDown(event) {
   if (event.key === 'Backspace' || event.key === 'Delete') return { action: 'clear' }
   const combo = shortcutFromEvent(event)
   return combo ? { action: 'save', combo } : { action: 'wait', held: heldModifiers(event) }
+}
+
+// 이동 키는 단일 키만 쓴다: 수식 키 하나는 떼는 순간(wait → keyup에서 저장), 그 밖의 키 하나는 누르는 순간 저장.
+const MODIFIER_LABELS = new Map([['Control', 'Ctrl'], ['Alt', 'Alt'], ['Shift', 'Shift'], ['Meta', isMacPlatform() ? 'Cmd' : 'Meta']])
+const DRAG_KEY_LABELS = new Map([[' ', 'Space'], ['+', 'Plus']])
+function dragKeyDown(event) {
+  if (event.key === 'Tab') return { action: 'leave' }
+  if (event.key === 'Escape') return { action: 'cancel' }
+  if (event.key === 'Backspace' || event.key === 'Delete') return { action: 'clear' }
+  const modifier = MODIFIER_LABELS.get(event.key)
+  if (modifier) return { action: 'wait', held: modifier }
+  // 수식 키와 다른 키를 함께 누르면(조합) 이동 키로 쓰지 않는다 — 수식 키 하나만 떼어 저장하게 둔다
+  if (event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return { action: 'wait', held: heldModifiers(event) }
+  const key = String(event.key ?? '')
+  if (!key) return { action: 'wait', held: '' }
+  const label = DRAG_KEY_LABELS.get(key) ?? (key.length === 1 ? key.toUpperCase() : key)
+  return { action: 'save', key: label }
 }
 
 function createLifetime() {
@@ -612,6 +622,47 @@ function ShortcutField({ label, hintId, hint, value, placeholder, ariaLabel, ko,
     React.createElement('p', { id: hintId, style: { margin: 0, opacity: 0.7 } }, hint))
 }
 
+// 이동 키 입력 칸: 수식 키 하나 또는 일반 키 하나를 그대로 등록한다. Esc 취소 · Backspace/Delete 지우기 · Tab은 포커스 이동.
+function DragKeyField({ label, hintId, hint, value, ariaLabel, ko, disabled, onChange }) {
+  const [recording, setRecording] = React.useState(false)
+  const [held, setHeld] = React.useState('')
+  const stop = () => { setRecording(false); setHeld('') }
+  const capture = (event) => {
+    const action = dragKeyDown(event)
+    if (action.action === 'leave') { stop(); return }
+    event.preventDefault()
+    event.stopPropagation()
+    const target = event.currentTarget
+    if (action.action === 'cancel') { stop(); target.blur(); return }
+    if (action.action === 'clear') { stop(); void onChange(''); target.blur(); return }
+    if (action.action === 'wait') { setHeld(action.held); return }
+    stop(); void onChange(action.key); target.blur()
+  }
+  const release = (event) => {   // 수식 키는 떼는 순간 저장 (다른 키와 조합하지 않는 단일 키)
+    const modifier = MODIFIER_LABELS.get(event.key)
+    if (!modifier || !recording) return
+    stop(); void onChange(modifier); event.currentTarget.blur()
+  }
+  return React.createElement(React.Fragment, null,
+    React.createElement('label', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 } },
+      React.createElement('span', null, label),
+      React.createElement('input', {
+        type: 'text',
+        readOnly: true,
+        'aria-label': ariaLabel,
+        'aria-describedby': hintId,
+        placeholder: recording ? (ko ? '키를 누르세요…' : 'Press a key…') : '',
+        style: { width: 150, cursor: 'pointer', textAlign: 'center', borderColor: recording ? '#7aa7ff' : undefined },
+        value: recording ? held : (value ?? ''),
+        disabled,
+        onFocus: () => { if (disabled) return; setRecording(true); setHeld('') },
+        onBlur: () => { setRecording(false); setHeld('') },
+        onKeyDown: capture,
+        onKeyUp: release,
+      })),
+    React.createElement('p', { id: hintId, style: { margin: 0, opacity: 0.7 } }, hint))
+}
+
 function settingsPage(ctx, form, updater, keys) {
   return function FeatureSettings({ view }) {
     const state = React.useSyncExternalStore((fn) => form.subscribe(fn), () => form.getSnapshot(), () => form.getSnapshot())
@@ -645,7 +696,7 @@ function settingsPage(ctx, form, updater, keys) {
     const bodyType = state.value?.bodyType || 'default'
     const shortcutValue = state.value?.characterToggleKey ?? 'Ctrl+Shift+D'
     const petShortcutValue = state.value?.petToggleKey ?? 'Ctrl+Shift+P'
-    const dragModifier = state.value?.dragModifier || 'alt'
+    const dragKey = state.value?.dragKey || 'Alt'
     return React.createElement('div', { style: { display: 'grid', gap: 16 } },
       ...fields.map(([field, label]) => React.createElement('label', { key: field, style: row },
         React.createElement('span', null, label),
@@ -669,14 +720,16 @@ function settingsPage(ctx, form, updater, keys) {
           React.createElement('input', { type: 'number', min: 0.5, max: 60, step: 0.5, style: { width: 90 }, value: sleepMinutes(state.value?.idleSleepMinutes), disabled: off, onChange: (event) => change('idleSleepMinutes', sleepMinutes(event.target.value)) }))),
       React.createElement('section', { 'aria-label': ko ? '단축키' : 'Shortcut', style: { display: 'grid', gap: 10, borderTop: '1px solid rgba(127,127,127,.25)', paddingTop: 14 } },
         React.createElement('strong', null, ko ? '단축키' : 'Shortcut'),
-        React.createElement('label', { style: row },
-          React.createElement('span', null, ko ? '캐릭터 이동 (누른 채 끌기)' : 'Move character (hold while dragging)'),
-          React.createElement('select', {
-            'aria-label': ko ? '캐릭터 이동 보조 키' : 'Drag modifier',
-            value: dragModifier,
-            disabled: off,
-            onChange: (event) => change('dragModifier', event.target.value),
-          }, ...DRAG_MODIFIERS.map(([value, koLabel, enLabel]) => React.createElement('option', { key: value, value }, ko ? koLabel : enLabel)))),
+        React.createElement(DragKeyField, {
+          label: ko ? '캐릭터 이동 키 (누른 채 끌기)' : 'Move character key (hold while dragging)',
+          hintId: DRAG_HINT_ID,
+          hint: ko ? '칸을 누른 뒤 수식 키(Alt·Ctrl·Shift·Cmd) 하나 또는 일반 키 하나를 누르세요. 비우면 좌우 버튼을 함께 눌러야 옮겨집니다.'
+            : 'Click the field, then press one modifier (Alt, Ctrl, Shift, Cmd) or one other key. Empty needs both buttons.',
+          value: dragKey,
+          ariaLabel: ko ? '캐릭터 이동 키 입력' : 'Record drag key',
+          ko, disabled: off,
+          onChange: (key) => change('dragKey', key),
+        }),
         React.createElement(ShortcutField, {
           label: ko ? '캐릭터 토글 단축키 (비우면 사용 안 함)' : 'Toggle character shortcut (empty to disable)',
           hintId: SHORTCUT_HINT_ID,
@@ -783,7 +836,7 @@ function apply(ctx) {
       // 시작 등장 연출 여부: 캐릭터가 처음 뜰 때 읽는다 (끄면 가운데 인사 없이 바로 제자리에)
       window.__dscIntro = { enabled: value.intro !== false }
       // 캐릭터 이동 보조 키: 캐릭터가 포인터 이벤트마다 읽는다 (다시 띄우지 않음)
-      window.__dscDrag = { modifier: value.dragModifier || 'alt' }
+      window.__dscDrag = { key: value.dragKey || 'Alt' }
     }
     life.add(() => { delete window.__dscOutfit; delete window.__dscSleep; delete window.__dscIntro; delete window.__dscDrag })
     life.add(form.subscribe(sync))
@@ -844,4 +897,4 @@ function apply(ctx) {
 exports.inject = ['locale', 'theme', 'configForms', 'slots']
 exports.apply = apply
 // 테스트용
-exports.internals = { githubSource, compareVersions, createUpdater, createKeyStore, ttsSignature, parseJsonObject, parseShortcut, shortcutFromEvent, shortcutKeyDown, matchesShortcut }
+exports.internals = { githubSource, compareVersions, createUpdater, createKeyStore, ttsSignature, parseJsonObject, parseShortcut, shortcutFromEvent, shortcutKeyDown, dragKeyDown, matchesShortcut }

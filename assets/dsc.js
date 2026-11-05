@@ -1862,26 +1862,52 @@
         if (performance.now() - st.t < POT_MS) return dy > 55 && dy > dx * 1.2 ? "pot" : null;
         return dy > 40 && dy > dx * 0.8 ? "basin" : null;
       };
-      // 집어 옮기기 보조 키: 설정(window.__dscDrag.modifier)이 켜져 있으면 왼쪽 버튼만 눌러도 옮길 수 있다.
+      // 집어 옮기기 키: 설정(window.__dscDrag.key)을 누른 채 왼쪽 버튼으로 끌면 옮길 수 있다.
+      // 수식 키(Alt·Ctrl·Shift·Cmd)는 포인터 이벤트의 상태로, 그 밖의 키 하나는 keydown/keyup으로 기억한다.
       // 기존처럼 왼쪽·오른쪽 버튼을 함께 누르는 방식도 그대로 동작한다.
-      const dragModifier = () => {
-        const value = window.__dscDrag && window.__dscDrag.modifier;
-        return value === "alt" || value === "ctrl" || value === "meta" || value === "shift" ? value : "none";
+      const dragKeyRaw = () => String((window.__dscDrag && window.__dscDrag.key) || "Alt").trim();
+      const dragKeyToken = () => {
+        const text = dragKeyRaw().toLowerCase();
+        if (!text || text === "none") return "";
+        if (text === "alt" || text === "option") return "alt";
+        if (text === "ctrl" || text === "control") return "ctrl";
+        if (text === "shift") return "shift";
+        if (text === "meta" || text === "cmd" || text === "command" || text === "win" || text === "windows") return "meta";
+        return text === "space" ? " " : text === "plus" ? "+" : text;
       };
-      const modifierHeld = (e) => {
+      const pressedKeys = new Set();
+      // 펫 창은 별도 창이라 키 입력을 직접 못 받을 수 있다(창에 포커스가 없음). 창 안 캐릭터가 키 상태를 대신 전달한다.
+      // 수식 키는 포인터 이벤트의 상태로 알 수 있어, 일반 키만 전달하면 된다.
+      const DRAG_MODIFIER_TOKENS = new Set(["alt", "ctrl", "shift", "meta"]);
+      const relayDragKey = (token, on) => {
+        if (PET || !link.open || !token || DRAG_MODIFIER_TOKENS.has(token)) return;
+        if (dragKeyToken() !== token) return;
+        try { linkPost("send", { list: [["dragheld", [token, on]]] }); } catch {}
+      };
+      const rememberKey = (e, on) => {
+        const token = String((e && e.key) || "").toLowerCase();
+        if (!token) return;
+        if (on) pressedKeys.add(token); else pressedKeys.delete(token);
+        relayDragKey(token, on);
+      };
+      addEventListener("keydown", (e) => rememberKey(e, true));
+      addEventListener("keyup", (e) => rememberKey(e, false));
+      addEventListener("blur", () => pressedKeys.clear());
+      const dragKeyHeld = (e) => {
         if ((e.buttons & 1) !== 1) return false;
-        const modifier = dragModifier();
-        if (modifier === "alt") return !!e.altKey;
-        if (modifier === "ctrl") return !!e.ctrlKey;
-        if (modifier === "meta") return !!e.metaKey;
-        if (modifier === "shift") return !!e.shiftKey;
-        return false;
+        const token = dragKeyToken();
+        if (!token) return false;
+        if (token === "alt") return !!e.altKey;
+        if (token === "ctrl") return !!e.ctrlKey;
+        if (token === "shift") return !!e.shiftKey;
+        if (token === "meta") return !!e.metaKey;
+        return pressedKeys.has(token);
       };
       document.addEventListener("pointermove", (e) => {
         if (PET && petPanelOpen && petPanel && petPanel.contains(e.target)) return;   // 패널 안 조작은 캐릭터 끌기로 이어지지 않음
         // 왼쪽·오른쪽을 함께 누르거나, 보조 키(기본 Alt)를 누른 채 움직이면 곧바로 집어 옮긴다.
         // 머리 쓰다듬기·가슴 끌기 판정과 6px 기준을 거치지 않는다
-        const both = (e.buttons & 3) === 3 || modifierHeld(e);
+        const both = (e.buttons & 3) === 3 || dragKeyHeld(e);
         if (chestFrom && !both && e.pointerId === chestFrom.id) {
           const dy = e.clientY - chestFrom.y, dx = e.clientX - chestFrom.x, now = performance.now();
           if (!chestDragging) {
@@ -2277,7 +2303,9 @@
         link.open = true; link.opening = 0; link.last = ""; window.__dscPetUsed = true;
         skipIntro(); free.anim = null; drag.pending = null; drag.on = false;
         if (!already) syncPet();
-        link.queue.push(["drag", [dragModifier()]]);   // 펫 창 안에서도 같은 보조 키로 옮길 수 있게
+        link.queue.push(["drag", [dragKeyRaw()]]);   // 펫 창 안에서도 같은 이동 키로 옮길 수 있게
+        const dragToken = dragKeyToken();
+        if (dragToken && !DRAG_MODIFIER_TOKENS.has(dragToken)) link.queue.push(["dragheld", [dragToken, pressedKeys.has(dragToken)]]);
         try { app.ticker.stop(); } catch {}
       };
       const leaveLink = () => {   // 펫 창이 제자리에 붙었거나 닫힘 → 창 안 제자리로
@@ -2348,7 +2376,7 @@
             const sig = JSON.stringify([dock, outfit]);
             if (sig !== link.last) { link.last = sig; link.queue.push(["dock", [dock]], ["outfit", [outfit]]); }
             // 이동 보조 키 설정이 바뀌면 펫 창에도 알려 줌 (펫 창은 설정 파일을 읽지 않는다)
-            const dragNow = dragModifier();
+            const dragNow = dragKeyRaw();
             if (dragNow !== link.dragMod) { link.dragMod = dragNow; link.queue.push(["drag", [dragNow]]); }
             if (link.queue.length) { const list = link.queue; link.queue = []; linkPost("send", { list }); }
           }
@@ -2435,7 +2463,8 @@
               if (fn === "outfit") { window.__dscOutfit = a[0]; renderPetPanel(); petSyncMenu(); }
               else if (fn === "dock") petDock = a[0];
               else if (fn === "voice") voiceState = a[0];
-              else if (fn === "drag") window.__dscDrag = { modifier: a[0] };   // 창 안 캐릭터와 같은 이동 보조 키
+              else if (fn === "drag") window.__dscDrag = { key: a[0] };   // 창 안 캐릭터와 같은 이동 키
+              else if (fn === "dragheld") { if (a[1]) pressedKeys.add(a[0]); else pressedKeys.delete(a[0]); }   // 포커스 없는 펫 창에 키 상태 전달
               else if (fn === "release" && drag.on) {   // 창 밖에서 놓음 → 여기서 이어서 미끄러지거나 붙음
                 petGrab = null; petTracking = false; PET.send({ type: "track", on: false });
                 drag.on = false; until.sweat = performance.now() + 400; release(a[0], a[1]);

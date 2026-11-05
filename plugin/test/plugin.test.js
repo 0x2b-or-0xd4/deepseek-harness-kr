@@ -322,25 +322,44 @@ test('settings page records the shortcut by pressing keys instead of typing it',
   } finally { h.dom.window.close() }
 })
 
-test('drag modifier and pet window shortcut are configurable and defaulted', () => {
+test('drag key and pet window shortcut are configurable and defaulted', () => {
   const defaults = readLive(Config({}))
-  assert.equal(defaults.dragModifier, 'alt')
+  assert.equal(defaults.dragKey, 'Alt')
   assert.equal(defaults.petToggleKey, 'Ctrl+Shift+P')
-  const custom = readLive(Config({ dragModifier: 'none', petToggleKey: '' }))
-  assert.equal(custom.dragModifier, 'none')
+  const custom = readLive(Config({ dragKey: 'F', petToggleKey: '' }))
+  assert.equal(custom.dragKey, 'F')
   assert.equal(custom.petToggleKey, '')
 })
 
-test('settings page exposes the drag modifier and pet window shortcut', () => {
-  const h = clientHarness({ character: true, theme: false, translation: false, dragModifier: 'alt', petToggleKey: 'Ctrl+Shift+P' })
+test('drag key recorder accepts one modifier or one ordinary key', () => {
+  const h = clientHarness()
+  try {
+    const { dragKeyDown } = h.client.internals
+    const action = (event) => ({ ...dragKeyDown(event) })
+    assert.deepEqual(action({ key: 'Tab' }), { action: 'leave' })
+    assert.deepEqual(action({ key: 'Escape' }), { action: 'cancel' })
+    assert.deepEqual(action({ key: 'Backspace' }), { action: 'clear' })
+    assert.deepEqual(action({ key: 'Delete' }), { action: 'clear' })
+    assert.deepEqual(action({ key: 'Control' }), { action: 'wait', held: 'Ctrl' })
+    assert.deepEqual(action({ key: 'Alt' }), { action: 'wait', held: 'Alt' })
+    assert.deepEqual(action({ key: 'f' }), { action: 'save', key: 'F' })
+    assert.deepEqual(action({ key: ' ' }), { action: 'save', key: 'Space' })
+    assert.deepEqual(action({ key: 'Enter' }), { action: 'save', key: 'Enter' })
+    assert.deepEqual(action({ key: 'c', ctrlKey: true }), { action: 'wait', held: 'Ctrl' })
+    assert.deepEqual(action({ key: 'f', shiftKey: true }), { action: 'wait', held: 'Shift' })
+  } finally { h.dom.window.close() }
+})
+
+test('settings page exposes the drag key and pet window shortcut', () => {
+  const h = clientHarness({ character: true, theme: false, translation: false, dragKey: 'Alt', petToggleKey: 'Ctrl+Shift+P' })
   try {
     const ctx = h.ctx(); h.client.apply(ctx)
     const Page = h.pages.get(packageName + '#deepseek-harness-kr')
     const html = renderToStaticMarkup(React.createElement(Page, { view: 'page' }))
-    assert.match(html, /Move character \(hold while dragging\)/)
-    assert.match(html, /aria-label="Drag modifier"/)
-    assert.match(html, /Alt \(Option\)<\/option>/)
-    assert.match(html, /Off \(both buttons\)/)
+    assert.match(html, /Move character key \(hold while dragging\)/)
+    assert.match(html, /aria-label="Record drag key"/)
+    assert.match(html, /value="Alt"/)
+    assert.match(html, /id="deepseek-harness-kr-drag-hint"/)
     assert.match(html, /aria-label="Record pet window shortcut"/)
     assert.match(html, /value="Ctrl\+Shift\+P"/)
     assert.match(html, /id="deepseek-harness-kr-pet-shortcut-hint"/)
@@ -376,10 +395,11 @@ test('pet window shortcut calls the toggle the character exposes', () => {
 test('character source supports modifier drag and a pet window toggle', async () => {
   const source = await readFile(new URL('../../assets/dsc.js', import.meta.url), 'utf8')
   for (const code of [source, bundle]) {
-    assert.match(code, /const both = \(e\.buttons & 3\) === 3 \|\| modifierHeld\(e\)/)
+    assert.match(code, /const both = \(e\.buttons & 3\) === 3 \|\| dragKeyHeld\(e\)/)
     assert.match(code, /window\.__dscPetToggle = petToggle/)
-    assert.match(code, /link\.queue\.push\(\["drag", \[dragModifier\(\)\]\]\)/)
-    assert.match(code, /fn === "drag"\) window\.__dscDrag = \{ modifier: a\[0\] \}/)
+    assert.match(code, /link\.queue\.push\(\["drag", \[dragKeyRaw\(\)\]\]\)/)
+    assert.match(code, /fn === "drag"\) window\.__dscDrag = \{ key: a\[0\] \}/)
+    assert.match(code, /fn === "dragheld"\)/)
   }
 })
 
