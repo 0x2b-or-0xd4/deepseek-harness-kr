@@ -67,3 +67,36 @@ html body[data-ds-dark-theme] #dsc-bubble.mutter {
   border-color: var(--dsc-mutter-line);
 }
 html body[data-ds-dark-theme] #dsc-bubble.mutter::after { border-color: var(--dsc-mutter-line); }
+
+/* 바깥 펫 창 우클릭 메뉴에서 여는 설정 패널 */
+#dsc-pet-panel {
+  position: fixed; z-index: 60; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 300px; max-height: 440px; overflow: auto; box-sizing: border-box;
+  padding: 12px 14px 14px; border-radius: 16px; background: #fffffff7; color: #26315e;
+  border: 2px solid #8fa6ff; box-shadow: 0 10px 30px #5f7cf555;
+  font: 600 13px/1.45 "Malgun Gothic", sans-serif; word-break: keep-all;
+  display: none; pointer-events: auto; user-select: none;
+}
+#dsc-pet-panel.show { display: block; }
+#dsc-pet-panel .dsc-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+#dsc-pet-panel .dsc-panel-head strong { font-size: 15px; }
+#dsc-pet-panel .dsc-panel-close {
+  width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%;
+  background: #eef1ff; color: #4a5aa0; font-size: 17px; line-height: 1; cursor: pointer;
+}
+#dsc-pet-panel .dsc-panel-close:hover { background: #dfe5ff; }
+#dsc-pet-panel .dsc-panel-section { padding: 9px 0; border-top: 1px solid #e3e8ff; }
+#dsc-pet-panel .dsc-panel-section:first-of-type { border-top: 0; padding-top: 2px; }
+#dsc-pet-panel .dsc-panel-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+#dsc-pet-panel .dsc-panel-row small { color: #8b96c4; font-size: 11px; font-weight: 500; }
+#dsc-pet-panel .dsc-panel-row output { color: #5f6fae; font-variant-numeric: tabular-nums; }
+#dsc-pet-panel .dsc-panel-sub { margin-bottom: 6px; color: #5f6fae; }
+#dsc-pet-panel input[type="range"] { width: 100%; margin: 0; accent-color: #8fa6ff; }
+#dsc-pet-panel .dsc-panel-check { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+#dsc-pet-panel .dsc-panel-check input { accent-color: #8fa6ff; margin: 0; }
+#dsc-pet-panel .dsc-panel-actions { padding-bottom: 0; }
+#dsc-pet-panel .dsc-panel-actions button {
+  width: 100%; padding: 7px 10px; border: 0; border-radius: 10px; cursor: pointer;
+  background: #eef1ff; color: #4a5aa0; font: inherit;
+}
+#dsc-pet-panel .dsc-panel-actions button:hover { background: #dfe5ff; }

@@ -10,6 +10,12 @@ const arg = (name) => { const hit = process.argv.find((a) => a.startsWith(`--${n
 const PIPE = arg('dsc-pipe'), ASSETS = arg('dsc-assets'), APP = __dirname
 const OWN = '/__app'   // dscpet://assets 아래에서 이 앱 폴더를 가리키는 경로
 const WIN_W = 820, WIN_H = 1160   // 전신(최대 990px = 300×3.3배)과 머리 위 말풍선 자리가 들어가는 크기
+// 우클릭 메뉴. 체크 표시는 페이지가 보내 주는 현재 상태({ size, outfit })로 그린다.
+// size = 기본(머리 크기 맞춤) 크기 대비 배율
+const MENU_SIZES = [0.75, 1, 1.25, 1.5]
+const MENU_OUTFIT = [['glasses', '뿔테 안경'], ['monocle', '외눈 안경'], ['skirt', '치마 길이 바꾸기'], ['chestClothes', '가슴 옷 바꾸기'], ['shoesOff', '신발 벗기'], ['tailHide', '꼬리 숨기기']]
+const MENU_BODY = [['default', '기본 체형'], ['type1', '체형 1'], ['type2', '체형 2 (꼬마)']]
+let menuState = { size: 1, outfit: {} }
 
 const MAC = process.platform === 'darwin'
 const SECRET = process.env.DSC_PET_SECRET
@@ -123,9 +129,26 @@ app.whenReady().then(() => {
       }
       // 이미 보이는 중이어도(따라오기 회차에서 바로 던지기 회차로 넘어간 경우) 지금 회차로 shown을 다시 알림
       case 'placed': if (wanted) { if (!win.isVisible()) win.showInactive(); toHost({ type: 'shown' }) } return
-      case 'menu':
-        Menu.buildFromTemplate([{ label: '창으로 돌아가기', click: () => toPage({ type: 'home' }) }]).popup({ window: win })
+      case 'menu': {
+        const size = Number(menuState.size) || 1, outfit = menuState.outfit || {}
+        Menu.buildFromTemplate([
+          { label: '설정…', click: () => toPage({ type: 'panel', open: true }) },
+          { label: '크기', submenu: [
+            ...MENU_SIZES.map((r) => ({ label: `${Math.round(r * 100)}%`, type: 'radio', checked: Math.abs(size - r) < 0.02, click: () => toPage({ type: 'size', ratio: r }) })),
+            { type: 'separator' },
+            { label: '슬라이더로 조절…', click: () => toPage({ type: 'panel', open: true, focus: 'size' }) },
+          ] },
+          { type: 'separator' },
+          { label: '창으로 돌아가기', click: () => toPage({ type: 'home' }) },
+          { label: '캐릭터 잠시 숨기기', click: () => toHost({ type: 'config', list: [['character', false]] }) },
+          { type: 'separator' },
+          { label: '소품·옷', submenu: MENU_OUTFIT.map(([key, label]) => ({ label, type: 'checkbox', checked: outfit[key] === true, click: () => toHost({ type: 'config', list: [[key, outfit[key] !== true]] }) })) },
+          { label: '체형', submenu: MENU_BODY.map(([value, label]) => ({ label, type: 'radio', checked: (outfit.bodyType || 'default') === value, click: () => toHost({ type: 'config', list: [['bodyType', value]] }) })) },
+        ]).popup({ window: win })
         return
+      }
+      // 페이지가 보낸 현재 상태 (메뉴 체크 표시용). 호스트로 넘기지 않는다.
+      case 'state': if (message.value && typeof message.value === 'object') menuState = { size: Number(message.value.size) || menuState.size, outfit: message.value.outfit && typeof message.value.outfit === 'object' ? message.value.outfit : menuState.outfit }; return
       // 창 안 캐릭터가 나타나는 프레임에 숨기라고 알려 옴 (1초는 창 안 쪽이 응답하지 않을 때를 위한 대비)
       // 곧바로 숨긴다: 창 안 캐릭터가 그리는 한 프레임까지 기다리면 두 캐릭터가 잠깐 겹쳐 보인다
       case 'attach': wanted = false; toHost(message); hide(); return

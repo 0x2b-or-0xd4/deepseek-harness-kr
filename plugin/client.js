@@ -684,6 +684,21 @@ function apply(ctx) {
     const form = ctx.configForms.get(ENTRY_ID)
     const updater = createUpdater()
     const keys = createKeyStore()
+    // 바깥 펫 창의 우클릭 메뉴·설정 패널이 보내는 값을 설정에 반영한다. 이 플러그인이 아는 키만 받는다.
+    const PET_CONFIG_KEYS = new Set([...OUTFIT_FIELDS.map(([field]) => field), 'bodyType', 'character'])
+    const applyPetConfig = (key, value) => {
+      if (typeof key !== 'string' || !PET_CONFIG_KEYS.has(key)) return
+      const next = key === 'bodyType'
+        ? (BODY_TYPES.some(([type]) => type === value) ? value : null)
+        : (typeof value === 'boolean' ? value : null)
+      if (next === null) return
+      try {
+        const result = form.set(key, next)
+        if (result && typeof result.catch === 'function') result.catch(() => {})
+      } catch {}
+    }
+    window.__dscSetConfig = applyPetConfig
+    life.add(() => { if (window.__dscSetConfig === applyPetConfig) delete window.__dscSetConfig })
     // 플러그인 관리자는 선택적으로 연결: 없어도 캐릭터·테마·번역은 그대로 동작한다.
     if (typeof ctx.inject === 'function') {
       ctx.inject(['remote', 'remote.pluginManager'], (scope) => {
