@@ -421,6 +421,7 @@
         else { free.anim = null; Object.assign(free, { x: from.x, y: from.y, k }); saveFree(); }
       };
       let lastPlaceKey = "";
+      let hidden = false;   // 캔버스만 숨김 상태 (캐릭터는 내리지 않음)
       let lastClip = "";
       let lastMask = "", lastMaskComposite = "";
       const petWin = { x: NaN, y: NaN };
@@ -435,6 +436,7 @@
         return { x: cx, y: cy };
       };
       const place = () => {
+        if (hidden) { canvas.style.display = bubble.style.display = "none"; return; }
         const now = performance.now();
         const home = homePose();
         if (link.open || link.follow?.shown) { link.home = home; canvas.style.display = bubble.style.display = "none"; lastPlaceKey = ""; return; }   // 펫 창이 대신 보여 줌
@@ -570,7 +572,7 @@
           }
         }
       };
-      const raf = () => { if (SLEEP.state !== "asleep") place(); requestAnimationFrame(raf); };
+      const raf = () => { try { if (!hidden && SLEEP.state !== "asleep") place(); } catch {} requestAnimationFrame(raf); };
       requestAnimationFrame(raf);
 
       // 말풍선
@@ -598,6 +600,58 @@
         try { window.dispatchEvent(new CustomEvent("dsc:say", { detail: { text, ms, kind } })); } catch {}
       };
       const hush = () => { relay("hush", []); clearTimeout(bubbleTimer); bubble.classList.remove("show"); };
+      // ---------- 캔버스만 숨김/표시 (설정에서 켠 사람만 단축키 사용) ----------
+      // 캐릭터를 내리지 않고 그리기(티커·rAF)만 멈춰 즉시 전환한다. 설정 저장·재마운트(모델 16.5MB 재로딩)를 피하려는 선택 기능.
+      // 숨김 상태에서 화면 구석에 남겨 두는 복구 칩 (단축키가 안 먹어도 클릭으로 되돌릴 수 있게)
+      let hideChip = null;
+      const showHideChip = () => {
+        if (PET || hideChip) return;
+        hideChip = document.createElement("button");
+        hideChip.type = "button";
+        hideChip.id = "dsc-hide-chip";
+        hideChip.textContent = "캐릭터 숨김 · 다시 표시";
+        hideChip.addEventListener("click", () => setHidden(false));
+        document.body.append(hideChip);
+      };
+      const clearHideChip = () => { if (hideChip) { hideChip.remove(); hideChip = null; } };
+      const setHidden = (next) => {
+        if (PET || hidden === next) return hidden;
+        hidden = next;
+        if (hidden) {
+          drag.pending = null; drag.on = false; strokeFrom = null; chestFrom = null;
+          hush();
+          canvas.style.display = bubble.style.display = "none";
+          veil.style.display = "none";
+          document.documentElement.classList.remove("dsc-hover", "dsc-grabbing");
+          try { app.ticker.stop(); } catch {}
+          if (link.open || link.follow) { link.opening = 0; try { linkPost("hide"); } catch {} }   // 펫 창이 대신 보여 주던 중이면 함께 숨김
+          showHideChip();
+        } else {
+          clearHideChip();
+          veil.style.display = "";
+          bubble.style.display = "";
+          canvas.style.display = "";
+          lastPlaceKey = "";
+          // 숨김 동안 절전 상태로 들어갔을 수 있으니 즉시 깨워 제자리로 되돌린다
+          if (SLEEP.state === "asleep" || SLEEP.state === "leaving") {
+            clearTimeout(sleepTimer); sleepTimer = 0;
+            cancelSleepSlide?.(); cancelSleepSlide = null;
+            SLEEP.state = "active"; fleeX = 0; SLEEP.lastActive = performance.now();
+          }
+          try { app.ticker.start(); } catch {}
+          // 펫 창이 떠 있었거나 정리 이벤트를 놓쳐 link가 붙잡혀 있으면, 창 안 표시를 위해 닫고 그린다
+          if (link.open || link.follow) { link.open = false; link.follow = null; link.opening = 0; try { linkPost("hide"); } catch {} }
+          place();
+          // 링크 정리·자리 계산이 늦게 끝나는 경우를 대비해 한 번 더 그린다
+          requestAnimationFrame(() => { if (!hidden && !link.open && !link.follow && canvas.style.display === "none") { lastPlaceKey = ""; place(); } });
+          setTimeout(() => { if (!hidden && !link.open && !link.follow) { lastPlaceKey = ""; place(); } }, 350);
+        }
+        return hidden;
+      };
+      if (!PET) {
+        window.__dscCanvasToggle = () => setHidden(!hidden);
+        window.__dscCanvasHidden = () => hidden;
+      }
 
       // ---------- 버튜버식 움직임 (얼굴 추적처럼) ----------
       // 이 모델은 VBridger식 리깅: 머리 = AngleX/Y/Z, 몸 = PositionX/Y/Z·LeanInput(물리 엔진이 늦게 따라감),
@@ -1653,12 +1707,13 @@
         });
       };
       const sleepActivity = () => {
+        if (hidden) return;
         SLEEP.lastActive = performance.now();
         startWake();
       };
       for (const t of (PET ? [] : ["pointerdown", "pointermove", "mousedown", "keydown", "wheel", "touchstart"])) addEventListener(t, sleepActivity, { passive: true, capture: true });
       const sleepGo = () => {
-        if (PET || drag.on || drag.pending || free.anim || SLEEP.state !== "active" || intro.phase !== "done" || fleeX !== 0 || walk.phase) return;
+        if (hidden || PET || drag.on || drag.pending || free.anim || SLEEP.state !== "active" || intro.phase !== "done" || fleeX !== 0 || walk.phase) return;
         if (link.open || link.follow?.shown) { SLEEP.lastActive = performance.now(); return; }   // 펫 창으로 밖에 꺼내 둔 동안엔 절전 안 함
         SLEEP.state = "leaving";
         speak("sleep_out", 2600);
@@ -1846,6 +1901,7 @@
         coverChest(3000); inputLockedUntil = now + 2500; walk.lastTouch = now;
       };
       document.addEventListener("pointerdown", (e) => {
+        if (hidden) return;
         if (chestFrom) { e.preventDefault(); e.stopPropagation(); swallowClick = true; return; }
         if (e.button !== 0) return;   // 왼쪽 버튼만 받음 (오른쪽 버튼은 집어 옮기기의 보조 버튼이라 여기서 처리하지 않음)
         swallowClick = false; strokeFrom = null;
@@ -1871,10 +1927,53 @@
         if (performance.now() - st.t < POT_MS) return dy > 55 && dy > dx * 1.2 ? "pot" : null;
         return dy > 40 && dy > dx * 0.8 ? "basin" : null;
       };
+      // 집어 옮기기 키: 설정(window.__dscDrag.key)을 누른 채 왼쪽 버튼으로 끌면 옮길 수 있다.
+      // 수식 키(Alt·Ctrl·Shift·Cmd)는 포인터 이벤트의 상태로, 그 밖의 키 하나는 keydown/keyup으로 기억한다.
+      // 기존처럼 왼쪽·오른쪽 버튼을 함께 누르는 방식도 그대로 동작한다.
+      const dragKeyRaw = () => String((window.__dscDrag && window.__dscDrag.key) || "Alt").trim();
+      const dragKeyToken = () => {
+        const text = dragKeyRaw().toLowerCase();
+        if (!text || text === "none") return "";
+        if (text === "alt" || text === "option") return "alt";
+        if (text === "ctrl" || text === "control") return "ctrl";
+        if (text === "shift") return "shift";
+        if (text === "meta" || text === "cmd" || text === "command" || text === "win" || text === "windows") return "meta";
+        return text === "space" ? " " : text === "plus" ? "+" : text;
+      };
+      const pressedKeys = new Set();
+      // 펫 창은 별도 창이라 키 입력을 직접 못 받을 수 있다(창에 포커스가 없음). 창 안 캐릭터가 키 상태를 대신 전달한다.
+      // 수식 키는 포인터 이벤트의 상태로 알 수 있어, 일반 키만 전달하면 된다.
+      const DRAG_MODIFIER_TOKENS = new Set(["alt", "ctrl", "shift", "meta"]);
+      const relayDragKey = (token, on) => {
+        if (PET || !link.open || !token || DRAG_MODIFIER_TOKENS.has(token)) return;
+        if (dragKeyToken() !== token) return;
+        try { linkPost("send", { list: [["dragheld", [token, on]]] }); } catch {}
+      };
+      const rememberKey = (e, on) => {
+        const token = String((e && e.key) || "").toLowerCase();
+        if (!token) return;
+        if (on) pressedKeys.add(token); else pressedKeys.delete(token);
+        relayDragKey(token, on);
+      };
+      addEventListener("keydown", (e) => rememberKey(e, true));
+      addEventListener("keyup", (e) => rememberKey(e, false));
+      addEventListener("blur", () => pressedKeys.clear());
+      const dragKeyHeld = (e) => {
+        if ((e.buttons & 1) !== 1) return false;
+        const token = dragKeyToken();
+        if (!token) return false;
+        if (token === "alt") return !!e.altKey;
+        if (token === "ctrl") return !!e.ctrlKey;
+        if (token === "shift") return !!e.shiftKey;
+        if (token === "meta") return !!e.metaKey;
+        return pressedKeys.has(token);
+      };
       document.addEventListener("pointermove", (e) => {
+        if (hidden) return;
         if (PET && petPanelOpen && petPanel && petPanel.contains(e.target)) return;   // 패널 안 조작은 캐릭터 끌기로 이어지지 않음
-        // 왼쪽·오른쪽을 함께 누른 채 움직이면 곧바로 집어 옮긴다. 머리 쓰다듬기·가슴 끌기 판정과 6px 기준을 거치지 않는다
-        const both = (e.buttons & 3) === 3;
+        // 왼쪽·오른쪽을 함께 누르거나, 보조 키(기본 Alt)를 누른 채 움직이면 곧바로 집어 옮긴다.
+        // 머리 쓰다듬기·가슴 끌기 판정과 6px 기준을 거치지 않는다
+        const both = (e.buttons & 3) === 3 || dragKeyHeld(e);
         if (chestFrom && !both && e.pointerId === chestFrom.id) {
           const dy = e.clientY - chestFrom.y, dx = e.clientX - chestFrom.x, now = performance.now();
           if (!chestDragging) {
@@ -1986,6 +2085,7 @@
         release(vx, vy);
       };
       document.addEventListener("pointerup", (e) => {
+        if (hidden) return;
         if (chestFrom && e.pointerId === chestFrom.id) {
           const dragged = chestDragging;
           releaseChest();
@@ -2009,6 +2109,7 @@
       }
       let hoverCheck = 0;
       document.addEventListener("mousemove", (e) => {   // 캐릭터 위에서는 손가락 커서
+        if (hidden) return;
         const now = performance.now(); if (now - hoverCheck < 80) return; hoverCheck = now;
         if (PET && petPanelOpen && petPanel && petPanel.contains(e.target)) { document.documentElement.classList.remove("dsc-hover"); return; }
         const over = !walking() && !!hitAt(e.clientX, e.clientY);
@@ -2016,6 +2117,7 @@
       }, { passive: true });
       // 우클릭은 집어 옮기기의 보조 버튼이라, 끄는 중에는 메뉴를 열지 않는다 (펫 창에서는 놓은 뒤에만 메뉴)
       document.addEventListener("contextmenu", (e) => {
+        if (hidden) return;
         if (drag.pending || drag.on) { e.preventDefault(); e.stopPropagation(); return; }
         if (!PET) return;
         e.preventDefault();
@@ -2025,6 +2127,7 @@
       //   펫 창 = 0.45배 ~ 화면에 들어가는 크기 (넘겨받을 때는 HEAD_GAIN으로 머리 크기를 창 안과 맞춤)
       //   창 안 = 자유 위치일 때만 0.42배~그 창에 들어가는 최대치. 제자리에 붙어 있으면 크기는 자동이라 휠은 대화 스크롤 그대로
       document.addEventListener("wheel", (e) => {
+        if (hidden) return;
         if (PET && petPanelOpen && petPanel && petPanel.contains(e.target)) return;   // 패널 안에서는 휠로 크기를 건드리지 않음
         if (intro.phase !== "done" || !free.on || !overBody(e.clientX, e.clientY)) return;
         e.preventDefault(); e.stopPropagation();   // 캐릭터 위에서는 대화 스크롤 대신 크기 조절
@@ -2165,6 +2268,9 @@
         renderPetPanel();
         petPanel.classList.add("show");
         petPanelOpen = true;
+        // 패널이 화면보다 커지면 그때만 스크롤: 화면 작업 영역에 맞춰 상한을 둔다
+        const room = Number(screen?.availHeight) > 0 ? Math.round(screen.availHeight - 48) : 560;
+        petPanel.style.maxHeight = Math.max(260, Math.min(560, room)) + "px";
         petPanelWin = { w: innerWidth, h: innerHeight };
         fitPetPanel();
         const slider = focus === "size" && petPanel.querySelector("[data-size-slider]");
@@ -2270,6 +2376,9 @@
         link.open = true; link.opening = 0; link.last = ""; window.__dscPetUsed = true;
         skipIntro(); free.anim = null; drag.pending = null; drag.on = false;
         if (!already) syncPet();
+        link.queue.push(["drag", [dragKeyRaw()]]);   // 펫 창 안에서도 같은 이동 키로 옮길 수 있게
+        const dragToken = dragKeyToken();
+        if (dragToken && !DRAG_MODIFIER_TOKENS.has(dragToken)) link.queue.push(["dragheld", [dragToken, pressedKeys.has(dragToken)]]);
         try { app.ticker.stop(); } catch {}
       };
       const leaveLink = () => {   // 펫 창이 제자리에 붙었거나 닫힘 → 창 안 제자리로
@@ -2279,7 +2388,7 @@
         free.on = false; free.anim = null; saveFree(); lastPlaceKey = "";   // 제자리로 (창이 좁으면 구석, 매 프레임 다시 계산)
         // 창 안 캐릭터가 다시 그려지는 프레임에 바로 펫 창을 숨김 (펫 창이 스스로 숨을 때까지 둘이 겹쳐 보이던 것 방지)
         requestAnimationFrame(() => { if (!link.open && !link.follow) linkPost("hide"); });
-        try { app.ticker.start(); } catch {}
+        try { if (!hidden) app.ticker.start(); } catch {}
       };
       const poll = () => {
         if (link.polling) return;
@@ -2339,6 +2448,9 @@
             }, outfit = window.__dscOutfit || {};
             const sig = JSON.stringify([dock, outfit]);
             if (sig !== link.last) { link.last = sig; link.queue.push(["dock", [dock]], ["outfit", [outfit]]); }
+            // 이동 보조 키 설정이 바뀌면 펫 창에도 알려 줌 (펫 창은 설정 파일을 읽지 않는다)
+            const dragNow = dragKeyRaw();
+            if (dragNow !== link.dragMod) { link.dragMod = dragNow; link.queue.push(["drag", [dragNow]]); }
             if (link.queue.length) { const list = link.queue; link.queue = []; linkPost("send", { list }); }
           }
           poll();
@@ -2349,6 +2461,22 @@
           link.voiceSent = voiceState;
           linkPost("send", { list: [["voice", [voiceState]]] });
         }, 60);
+      }
+
+      // ---------- 단축키: 바깥 펫 창으로 내보내기 / 돌아오기 ----------
+      // 창 안 캐릭터만. 내보내기는 준비된(또는 만들기 시작할) 펫 창을 지금 자리에서 열고,
+      // 돌아오기는 펫 창을 숨겨 poll('hidden') → leaveLink()가 창 안 제자리로 되돌린다.
+      if (!PET) {
+        const petOpenPose = () => (SLEEP.state === "active" && shown.k > 0 ? { k: shown.k, x: shown.x, y: shown.y } : dockTarget(homePose()));
+        const petToggle = () => {
+          if (link.open || link.follow?.shown) { link.opening = 0; linkPost("hide"); return; }   // 펫 창이 떠 있음 → 창 안으로
+          if (!PET_URL) return;
+          if (link.petState === "shown") { enterLink(); return; }   // 다른 화면에서 열어 둔 펫 창이 이어받게
+          const pose = petOpenPose(), s = screenOf(pose.x, pose.y);
+          link.opening = performance.now();
+          linkPost("open", { from: { k: pose.k, x: s.x, y: s.y }, to: { k: pose.k, x: s.x, y: s.y }, seq: ++link.seq });
+        };
+        window.__dscPetToggle = petToggle;
       }
 
       // ---------- 펫 창 쪽: 창 안 캐릭터가 보낸 반응을 그대로 재생 ----------
@@ -2408,6 +2536,8 @@
               if (fn === "outfit") { window.__dscOutfit = a[0]; renderPetPanel(); petSyncMenu(); }
               else if (fn === "dock") petDock = a[0];
               else if (fn === "voice") voiceState = a[0];
+              else if (fn === "drag") window.__dscDrag = { key: a[0] };   // 창 안 캐릭터와 같은 이동 키
+              else if (fn === "dragheld") { if (a[1]) pressedKeys.add(a[0]); else pressedKeys.delete(a[0]); }   // 포커스 없는 펫 창에 키 상태 전달
               else if (fn === "release" && drag.on) {   // 창 밖에서 놓음 → 여기서 이어서 미끄러지거나 붙음
                 petGrab = null; petTracking = false; PET.send({ type: "track", on: false });
                 drag.on = false; until.sweat = performance.now() + 400; release(a[0], a[1]);
