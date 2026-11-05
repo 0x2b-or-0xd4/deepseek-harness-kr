@@ -417,7 +417,7 @@ test('pet window shortcut calls the toggle the character exposes', () => {
   } finally { h.dom.window.close() }
 })
 
-test('canvas shortcut only runs when enabled and works inside the composer', () => {
+test('canvas shortcut only runs when enabled and works inside the composer', async () => {
   const h = clientHarness({ character: false, theme: false, translation: false, canvasToggle: true, canvasToggleKey: 'Ctrl+Shift+H' })
   try {
     const ctx = h.ctx(); h.client.apply(ctx)
@@ -433,14 +433,17 @@ test('canvas shortcut only runs when enabled and works inside the composer', () 
       const releaseEvent = fire('keyup', extra, target)
       return { event, releaseEvent }
     }
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
     assert.equal(press().event.defaultPrevented, true)
     assert.equal(calls, 1)
+    await wait(180)   // 누른 시각 기준 연타 방지(150ms) 밖으로
     const input = h.dom.window.document.createElement('textarea')
     h.dom.window.document.body.append(input)
     press({}, input)   // 수식 키 조합은 입력창 안에서도 동작
     assert.equal(calls, 2)
     press({ shiftKey: false })   // 다른 조합은 무시
     assert.equal(calls, 2)
+    await wait(180)
     h.form.update({ ...h.form.getSnapshot().value, canvasToggle: false })
     press()
     assert.equal(calls, 2)   // 기능을 끄면 단축키가 동작하지 않음
