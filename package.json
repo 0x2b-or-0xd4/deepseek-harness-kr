@@ -17,6 +17,7 @@
     "plugins/dsh-tts/src/host.js",
     "plugins/dsh-tts/src/index.js",
     "plugin/pet-host.js",
+    "plugin/app-icon.js",
     "lib/client.js",
     "assets/",
     "pet/",
