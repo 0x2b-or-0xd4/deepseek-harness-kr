@@ -260,6 +260,68 @@ test('shortcut handles repeats, matching keyup, blur, permissions, failures and 
   } finally { h.dom.window.close() }
 })
 
+test('shortcut parsing and key capture share one spelling', () => {
+  const h = clientHarness({ character: false, theme: false, translation: false })
+  try {
+    const { parseShortcut, shortcutFromEvent, matchesShortcut } = h.client.internals
+    // 같은 키워드로 만든 객체라도 평가한 창(jsdom)이 달라 프로토타입이 다르므로 이쪽 창 객체로 옮겨 비교한다.
+    const combo = (value) => ({ ...parseShortcut(value) })
+    assert.deepEqual(combo('Ctrl+Shift+D'), { ctrl: true, shift: true, alt: false, meta: false, key: 'd' })
+    assert.deepEqual(combo('shift+alt+f1'), { ctrl: false, shift: true, alt: true, meta: false, key: 'f1' })
+    assert.deepEqual(combo(' Cmd + Space '), { ctrl: false, shift: false, alt: false, meta: true, key: 'space' })
+    assert.equal(parseShortcut('Ctrl+Shift'), null, 'modifier keys alone are not a shortcut')
+    assert.equal(parseShortcut(''), null)
+    assert.equal(shortcutFromEvent({ key: 'd', ctrlKey: true, shiftKey: true }), 'Ctrl+Shift+D')
+    assert.equal(shortcutFromEvent({ key: 'F1', altKey: true }), 'Alt+F1')
+    assert.equal(shortcutFromEvent({ key: ' ', ctrlKey: true }), 'Ctrl+Space')
+    assert.equal(shortcutFromEvent({ key: '+', ctrlKey: true }), 'Ctrl+Plus')
+    assert.equal(shortcutFromEvent({ key: 'Control', ctrlKey: true }), '')
+    assert.equal(shortcutFromEvent({}), '')
+    assert.match(shortcutFromEvent({ key: 'd', metaKey: true }), /^(Cmd|Meta)\+D$/)
+    const pressed = (key, extra = {}) => ({ key, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...extra })
+    assert.equal(matchesShortcut('Ctrl+Shift+D', pressed('D', { ctrlKey: true, shiftKey: true })), true)
+    assert.equal(matchesShortcut('Ctrl+Shift+D', pressed('d', { ctrlKey: true, shiftKey: true })), true)
+    assert.equal(matchesShortcut('Ctrl+Shift+D', pressed('D', { ctrlKey: true })), false)
+    assert.equal(matchesShortcut('Ctrl+Shift+D', pressed('D', { ctrlKey: true, shiftKey: true, altKey: true })), false)
+    assert.equal(matchesShortcut('cmd+d', pressed('d', { metaKey: true })), true)
+    assert.equal(matchesShortcut('Ctrl+Space', pressed(' ', { ctrlKey: true })), true)
+    assert.equal(matchesShortcut('Ctrl+Plus', pressed('+', { ctrlKey: true })), true)
+    assert.equal(matchesShortcut('', pressed('d')), false)
+    assert.equal(matchesShortcut('Ctrl+Shift', pressed('Shift', { ctrlKey: true, shiftKey: true })), false)
+  } finally { h.dom.window.close() }
+})
+
+test('shortcut recorder turns each recorded key into one action', () => {
+  const h = clientHarness({ character: false, theme: false, translation: false })
+  try {
+    const { shortcutKeyDown } = h.client.internals
+    const action = (event) => ({ ...shortcutKeyDown(event) })
+    assert.deepEqual(action({ key: 'Tab' }), { action: 'leave' }, 'Tab moves focus instead of becoming a shortcut')
+    assert.deepEqual(action({ key: 'Escape' }), { action: 'cancel' })
+    assert.deepEqual(action({ key: 'Backspace' }), { action: 'clear' })
+    assert.deepEqual(action({ key: 'Delete' }), { action: 'clear' })
+    assert.deepEqual(action({ key: 'd', ctrlKey: true, shiftKey: true }), { action: 'save', combo: 'Ctrl+Shift+D' })
+    assert.deepEqual(action({ key: ' ', ctrlKey: true }), { action: 'save', combo: 'Ctrl+Space' })
+    assert.deepEqual(action({ key: 'Control', ctrlKey: true }), { action: 'wait', held: 'Ctrl' })
+    assert.deepEqual(action({ key: 'Shift', ctrlKey: true, shiftKey: true }), { action: 'wait', held: 'Ctrl+Shift' })
+  } finally { h.dom.window.close() }
+})
+
+test('settings page records the shortcut by pressing keys instead of typing it', () => {
+  const h = clientHarness({ character: false, theme: false, translation: false, characterToggleKey: 'Ctrl+Shift+D' })
+  try {
+    const ctx = h.ctx(); h.client.apply(ctx)
+    const Page = h.pages.get(packageName + '#deepseek-harness-kr')
+    const html = renderToStaticMarkup(React.createElement(Page, { view: 'page' }))
+    assert.match(html, /aria-label="Record toggle character shortcut"/)
+    assert.match(html, /readonly=""/)
+    assert.match(html, /value="Ctrl\+Shift\+D"/)
+    assert.match(html, /id="deepseek-harness-kr-shortcut-hint"/)
+    assert.match(html, /Click the field, then press the keys you want/)
+    ctx.dispose()
+  } finally { h.dom.window.close() }
+})
+
 test('sleep minutes are bounded in schema and client settings', () => {
   assert.equal(Config.dict.idleSleepMinutes.meta.min, 0.5)
   assert.equal(Config.dict.idleSleepMinutes.meta.max, 60)
