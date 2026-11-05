@@ -439,6 +439,12 @@ test('canvas shortcut only runs when enabled and works inside the composer', () 
   } finally { h.dom.window.close() }
 })
 
+test('pet window settings panel is tall enough to avoid a needless scrollbar', async () => {
+  const css = await readFile(new URL('../../assets/character.css', import.meta.url), 'utf8')
+  assert.match(css, /#dsc-pet-panel \{[^}]*max-height: 560px/)
+  assert.doesNotMatch(css, /#dsc-pet-panel \{[^}]*max-height: 440px/)
+})
+
 test('character source supports modifier drag and a pet window toggle', async () => {
   const source = await readFile(new URL('../../assets/dsc.js', import.meta.url), 'utf8')
   for (const code of [source, bundle]) {

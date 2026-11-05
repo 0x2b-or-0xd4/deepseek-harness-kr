@@ -2235,6 +2235,9 @@
         renderPetPanel();
         petPanel.classList.add("show");
         petPanelOpen = true;
+        // 패널이 화면보다 커지면 그때만 스크롤: 화면 작업 영역에 맞춰 상한을 둔다
+        const room = Number(screen?.availHeight) > 0 ? Math.round(screen.availHeight - 48) : 560;
+        petPanel.style.maxHeight = Math.max(260, Math.min(560, room)) + "px";
         petPanelWin = { w: innerWidth, h: innerHeight };
         fitPetPanel();
         const slider = focus === "size" && petPanel.querySelector("[data-size-slider]");
