@@ -394,8 +394,13 @@ test('canvas shortcut row is disabled while the character setting is off', () =>
     const Page = h.pages.get(packageName + '#deepseek-harness-kr')
     const html = renderToStaticMarkup(React.createElement(Page, { view: 'page' }))
     assert.match(html, /Unavailable while the character and speech bubbles are off/)
+    assert.match(html, /aria-label="Record drag key"[^>]*disabled=""/)
+    assert.match(html, /aria-label="Record pet window shortcut"[^>]*disabled=""/)
     assert.match(html, /aria-label="Record canvas hide\/show shortcut"[^>]*disabled=""/)
     assert.match(html, /aria-label="Enable canvas hide\/show"[^>]*disabled=""/)
+    // 캐릭터를 다시 켤 수 있는 토글 단축키는 계속 활성
+    assert.match(html, /aria-label="Record character and speech bubbles toggle shortcut"(?![^>]*disabled="")/)
+    assert.match(html, /This shortcut still turns the character back on while it is off/)
     ctx.dispose()
   } finally { h.dom.window.close() }
 })
@@ -668,7 +673,7 @@ test('plugin settings page exposes feature and power saving switches', () => {
     assert.match(html, /Pastel theme/)
     assert.match(html, /Korean language pack/)
     assert.match(html, /aria-label="Power saving"/)
-    assert.match(html, /aria-label="Shortcut"/)
+    assert.match(html, /aria-label="Shortcuts - Character and speech bubbles"/)
     assert.match(html, /min="0.5" max="60"/)
     ctx.dispose()
   } finally { h.dom.window.close() }

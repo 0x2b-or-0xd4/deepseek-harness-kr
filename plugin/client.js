@@ -629,7 +629,7 @@ function ShortcutField({ label, control, hintId, hint, value, placeholder, ariaL
 }
 
 // 이동 키 입력 칸: 수식 키 하나 또는 일반 키 하나를 그대로 등록한다. Esc 취소 · Backspace/Delete 지우기 · Tab은 포커스 이동.
-function DragKeyField({ label, hintId, hint, value, ariaLabel, ko, disabled, onChange }) {
+function DragKeyField({ label, hintId, hint, value, ariaLabel, ko, disabled, inactive, onChange }) {
   const [recording, setRecording] = React.useState(false)
   const [held, setHeld] = React.useState('')
   const stop = () => { setRecording(false); setHeld('') }
@@ -650,15 +650,15 @@ function DragKeyField({ label, hintId, hint, value, ariaLabel, ko, disabled, onC
     stop(); void onChange(modifier); event.currentTarget.blur()
   }
   return React.createElement(React.Fragment, null,
-    React.createElement('label', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 } },
-      React.createElement('span', null, label),
+    React.createElement('label', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 24, rowGap: 8 } },
+      React.createElement('span', { style: { opacity: inactive ? 0.55 : 1 } }, label),
       React.createElement('input', {
         type: 'text',
         readOnly: true,
         'aria-label': ariaLabel,
         'aria-describedby': hintId,
         placeholder: recording ? (ko ? '키를 누르세요…' : 'Press a key…') : '',
-        style: { width: 150, cursor: 'pointer', textAlign: 'center', borderColor: recording ? '#7aa7ff' : undefined },
+        style: { width: 150, cursor: disabled ? 'default' : 'pointer', textAlign: 'center', borderColor: recording ? '#7aa7ff' : undefined, opacity: inactive ? 0.45 : 1 },
         value: recording ? held : (value ?? ''),
         disabled,
         onFocus: () => { if (disabled) return; setRecording(true); setHeld('') },
@@ -666,7 +666,7 @@ function DragKeyField({ label, hintId, hint, value, ariaLabel, ko, disabled, onC
         onKeyDown: capture,
         onKeyUp: release,
       })),
-    React.createElement('p', { id: hintId, style: { margin: 0, opacity: 0.7 } }, hint))
+    React.createElement('p', { id: hintId, style: { margin: 0, opacity: inactive ? 0.45 : 0.7 } }, hint))
 }
 
 // 캔버스만 숨김 상태를 설정 화면에도 보여 준다 — 설정(캐릭터와 말풍선)이 꺼진 것과 혼동하지 않게.
@@ -743,25 +743,27 @@ function settingsPage(ctx, form, updater, keys) {
         React.createElement('label', { style: row },
           React.createElement('span', null, ko ? '쉬기 전 대기 시간 (분)' : 'Idle minutes before resting'),
           React.createElement('input', { type: 'number', min: 0.5, max: 60, step: 0.5, style: { width: 90 }, value: sleepMinutes(state.value?.idleSleepMinutes), disabled: off, onChange: (event) => change('idleSleepMinutes', sleepMinutes(event.target.value)) }))),
-      React.createElement('section', { 'aria-label': ko ? '단축키' : 'Shortcut', style: { display: 'grid', gap: 10, borderTop: '1px solid rgba(127,127,127,.25)', paddingTop: 14 } },
-        React.createElement('strong', null, ko ? '단축키' : 'Shortcut'),
+      React.createElement('section', { 'aria-label': ko ? '단축키 - 캐릭터와 말풍선' : 'Shortcuts - Character and speech bubbles', style: { display: 'grid', gap: 10, borderTop: '1px solid rgba(127,127,127,.25)', paddingTop: 14 } },
+        React.createElement('strong', null, ko ? '단축키 - 캐릭터와 말풍선' : 'Shortcuts - Character and speech bubbles'),
         React.createElement('p', { id: SHORTCUT_HINT_ID, style: { margin: 0, opacity: 0.7 } },
           ko ? '칸을 누른 뒤 원하는 키 조합을 그대로 누르면 등록됩니다. Esc 취소, Backspace로 지우기'
             : 'Click the field, then press the keys you want. Esc cancels, Backspace clears.'),
         React.createElement(DragKeyField, {
           label: ko ? '캐릭터 이동 키 (누른 채 끌기)' : 'Move character key (hold while dragging)',
           hintId: DRAG_HINT_ID,
-          hint: ko ? '캐릭터를 집어 옮길 때 누르고 있어야 하는 키입니다. 수식 키(Alt·Ctrl·Shift·Cmd) 하나 또는 일반 키 하나를 등록합니다. 비우면 좌우 버튼을 함께 눌러야 합니다.'
-            : 'Hold this key while dragging to move the character. Record one modifier (Alt, Ctrl, Shift, Cmd) or one other key. Empty needs both buttons.',
+          hint: !characterOn
+            ? (ko ? '캐릭터와 말풍선이 꺼져 있을 때는 사용할 수 없습니다.' : 'Unavailable while the character and speech bubbles are off.')
+            : (ko ? '캐릭터를 집어 옮길 때 누르고 있어야 하는 키입니다. 수식 키(Alt·Ctrl·Shift·Cmd) 하나 또는 일반 키 하나를 등록합니다. 비우면 좌우 버튼을 함께 눌러야 합니다.'
+              : 'Hold this key while dragging to move the character. Record one modifier (Alt, Ctrl, Shift, Cmd) or one other key. Empty needs both buttons.'),
           value: dragKey,
           ariaLabel: ko ? '캐릭터 이동 키 입력' : 'Record drag key',
-          ko, disabled: off,
+          ko, disabled: off || !characterOn, inactive: !characterOn,
           onChange: (key) => change('dragKey', key),
         }),
         React.createElement(ShortcutField, {
           label: ko ? '캐릭터와 말풍선 설정 토글 단축키 (비우면 사용 안 함)' : 'Character and speech bubbles setting toggle shortcut (empty to disable)',
           hintId: SHORTCUT_HINT_ID,
-          hint: '',
+          hint: characterOn ? '' : (ko ? '캐릭터와 말풍선이 꺼져 있어도 이 단축키로 다시 켤 수 있습니다.' : 'This shortcut still turns the character back on while it is off.'),
           value: shortcutValue,
           placeholder: 'Ctrl+Shift+D',
           ariaLabel: ko ? '캐릭터와 말풍선 설정 토글 단축키 입력' : 'Record character and speech bubbles toggle shortcut',
@@ -794,12 +796,14 @@ function settingsPage(ctx, form, updater, keys) {
         React.createElement(ShortcutField, {
           label: ko ? '펫 창 내보내기·돌아오기 단축키 (비우면 사용 안 함)' : 'Pet window shortcut (empty to disable)',
           hintId: PET_SHORTCUT_HINT_ID,
-          hint: ko ? '캐릭터를 바깥 펫 창으로 내보내고 다시 불러옵니다.'
-            : 'Moves the character out to the pet window and back.',
+          hint: !characterOn
+            ? (ko ? '캐릭터와 말풍선이 꺼져 있을 때는 사용할 수 없습니다.' : 'Unavailable while the character and speech bubbles are off.')
+            : (ko ? '캐릭터를 바깥 펫 창으로 내보내고 다시 불러옵니다.'
+              : 'Moves the character out to the pet window and back.'),
           value: petShortcutValue,
           placeholder: 'Ctrl+Shift+P',
           ariaLabel: ko ? '펫 창 단축키 입력' : 'Record pet window shortcut',
-          ko, disabled: off,
+          ko, disabled: off || !characterOn, inactive: !characterOn,
           onChange: (combo) => change('petToggleKey', combo),
         })),
       error ? React.createElement('p', { role: 'alert' }, error) : null,
