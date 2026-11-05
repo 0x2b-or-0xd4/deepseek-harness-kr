@@ -380,8 +380,13 @@ test('settings page exposes the drag key and pet window shortcut', () => {
     assert.equal((html.match(/Click the field, then press the keys you want/g) || []).length, 1)
     // 스위치가 꺼져 있으면 캔버스 단축키 칸은 비활성 모양(disabled)이다
     assert.match(html, /aria-label="Record canvas hide\/show shortcut"[^>]*disabled=""/)
+    // 캔버스 단축키는 '캐릭터와 말풍선 설정 토글' 바로 다음, 펫 창 앞에 온다
+    const charAt = html.indexOf('Record character and speech bubbles toggle shortcut')
+    const canvasAt = html.indexOf('Record canvas hide/show shortcut')
+    const petAt = html.indexOf('Record pet window shortcut')
+    assert.ok(charAt > 0 && charAt < canvasAt && canvasAt < petAt)
     // 스위치는 단축키 칸 바로 왼쪽(같은 줄의 입력 바로 앞)에 온다
-    assert.ok(html.indexOf('Enable canvas hide/show') < html.indexOf('Record canvas hide/show shortcut'))
+    assert.ok(html.indexOf('Enable canvas hide/show') < canvasAt)
     assert.match(html, /Enable canvas hide\/show[^]{0,400}?Record canvas hide\/show shortcut/)
     ctx.dispose()
   } finally { h.dom.window.close() }

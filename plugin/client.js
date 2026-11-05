@@ -750,18 +750,7 @@ function settingsPage(ctx, form, updater, keys) {
           ko, disabled: off,
           onChange: (combo) => change('characterToggleKey', combo),
         }),
-        React.createElement(ShortcutField, {
-          label: ko ? '펫 창 내보내기·돌아오기 단축키 (비우면 사용 안 함)' : 'Pet window shortcut (empty to disable)',
-          hintId: PET_SHORTCUT_HINT_ID,
-          hint: ko ? '캐릭터를 바깥 펫 창으로 내보내고 다시 불러옵니다.'
-            : 'Moves the character out to the pet window and back.',
-          value: petShortcutValue,
-          placeholder: 'Ctrl+Shift+P',
-          ariaLabel: ko ? '펫 창 단축키 입력' : 'Record pet window shortcut',
-          ko, disabled: off,
-          onChange: (combo) => change('petToggleKey', combo),
-        }),
-        // 캔버스만 숨김/표시: 켠 사람만 쓰는 선택 기능. 스위치를 단축키 칸 바로 왼쪽에 둔다.
+        // 캔버스만 숨김/표시: 캐릭터 설정을 끄는 것이 아니라 그리기만 멈춘다. 스위치를 단축키 칸 바로 왼쪽에 둔다.
         React.createElement(ShortcutField, {
           label: ko ? '캔버스만 숨김/표시 단축키 (비우면 사용 안 함)' : 'Hide/show canvas shortcut (empty to disable)',
           control: React.createElement('input', {
@@ -772,13 +761,24 @@ function settingsPage(ctx, form, updater, keys) {
             onChange: (event) => change('canvasToggle', event.target.checked),
           }),
           hintId: CANVAS_HINT_ID,
-          hint: ko ? '왼쪽 스위치를 켜면 캐릭터를 내리지 않고 캔버스만 즉시 숨기고 표시합니다.'
-            : 'Turn on the switch to hide and show the canvas instantly without unloading the character.',
+          hint: ko ? '왼쪽 스위치는 이 단축키를 켜고 끕니다. 단축키는 캐릭터와 말풍선 설정을 끄는 것이 아니라, 캔버스만 잠시 숨기고 다시 표시합니다(그리기만 멈춤).'
+            : 'The switch enables this shortcut. The shortcut does not turn the character or speech-bubble setting off; it only hides and shows the canvas by pausing drawing.',
           value: canvasKeyValue,
           placeholder: 'Ctrl+Shift+H',
           ariaLabel: ko ? '캔버스 숨김/표시 단축키 입력' : 'Record canvas hide/show shortcut',
           ko, disabled: off || !canvasToggle, inactive: !canvasToggle,
           onChange: (combo) => change('canvasToggleKey', combo),
+        }),
+        React.createElement(ShortcutField, {
+          label: ko ? '펫 창 내보내기·돌아오기 단축키 (비우면 사용 안 함)' : 'Pet window shortcut (empty to disable)',
+          hintId: PET_SHORTCUT_HINT_ID,
+          hint: ko ? '캐릭터를 바깥 펫 창으로 내보내고 다시 불러옵니다.'
+            : 'Moves the character out to the pet window and back.',
+          value: petShortcutValue,
+          placeholder: 'Ctrl+Shift+P',
+          ariaLabel: ko ? '펫 창 단축키 입력' : 'Record pet window shortcut',
+          ko, disabled: off,
+          onChange: (combo) => change('petToggleKey', combo),
         })),
       error ? React.createElement('p', { role: 'alert' }, error) : null,
       React.createElement(TtsSection, { form, keys, ko, writable: state.writable, tts: state.value?.tts }),
