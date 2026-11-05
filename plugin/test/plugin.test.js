@@ -463,6 +463,7 @@ test('character source supports modifier drag and a pet window toggle', async ()
     assert.match(code, /fn === "drag"\) window\.__dscDrag = \{ key: a\[0\] \}/)
     assert.match(code, /fn === "dragheld"\)/)
     assert.match(code, /window\.__dscCanvasToggle = \(\) => setHidden\(!hidden\)/)
+    assert.match(code, /id = "dsc-hide-chip"/)
   }
 })
 

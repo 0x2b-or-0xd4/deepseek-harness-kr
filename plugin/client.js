@@ -222,6 +222,7 @@ function startCharacter(life) {
     delete window.__dscPetToggle
     delete window.__dscCanvasToggle
     delete window.__dscCanvasHidden
+    document.getElementById('dsc-hide-chip')?.remove()
     if (!window.__dscPetUsed) return
     delete window.__dscPetUsed
     try { window.fetch(PET_ROOT + 'hide', { method: 'POST', keepalive: true }).catch(() => {}) } catch {}
