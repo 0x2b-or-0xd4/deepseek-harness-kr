@@ -207,7 +207,7 @@ function clientHarness(initial = {}, status = 'ready') {
   return { dom, client, ctx, languages, dictionaries, resolveModel, form, mutations, pages, get appCreated() { return appCreated }, get appDestroyed() { return appDestroyed }, get selected() { return selected } }
 }
 
-test('shortcut handles repeats, matching keyup, blur, permissions, failures and disposal', async () => {
+test('character shortcut debounces, guards permissions/failures and disposes', async () => {
   const h = clientHarness({ character: false, theme: false, translation: false })
   try {
     let calls = 0, mode = 'ok', writable = true
@@ -221,41 +221,36 @@ test('shortcut handles repeats, matching keyup, blur, permissions, failures and 
     let warnings = 0
     h.dom.window.console.warn = () => { warnings++ }
     const ctx = h.ctx(); h.client.apply(ctx)
-    const key = async (type = 'keydown', extra = {}, target = h.dom.window) => {
-      const event = new h.dom.window.KeyboardEvent(type, { key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true, ...extra })
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+    const key = async (extra = {}, target = h.dom.window) => {
+      const event = new h.dom.window.KeyboardEvent('keydown', { key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true, ...extra })
       target.dispatchEvent(event)
       await new Promise((resolve) => setImmediate(resolve))
       return event
     }
     assert.equal((await key()).defaultPrevented, true); assert.equal(calls, 1)
-    await key('keyup', { key: 'Shift', code: 'ShiftLeft' })
-    await key(); assert.equal(calls, 1)
-    await key('keyup')
-    await key('keydown', { repeat: true }); assert.equal(calls, 1)
-    await key(); assert.equal(calls, 2)
-    h.dom.window.dispatchEvent(new h.dom.window.Event('blur'))
-    await key(); assert.equal(calls, 3)
-    await key('keyup')
-    writable = false; await key(); assert.equal(calls, 3)
+    await key(); assert.equal(calls, 1)   // 150ms 안 연타는 무시
+    await key({ repeat: true }); assert.equal(calls, 1)
+    await wait(180); await key(); assert.equal(calls, 2)
+    writable = false; await wait(180); await key(); assert.equal(calls, 2)
     writable = true
-    h.form.update({}, 'loading'); await key(); assert.equal(calls, 3)
+    h.form.update({}, 'loading'); await wait(180); await key(); assert.equal(calls, 2)
     h.form.update({ character: false, theme: false, translation: false })
     const input = h.dom.window.document.createElement('input')
     h.dom.window.document.body.append(input)
-    await key('keydown', {}, input); assert.equal(calls, 3)
-    await key('keydown', { metaKey: true }); assert.equal(calls, 3)
-    for (mode of ['false', 'throw']) { await key(); await key('keyup') }
+    await wait(180); await key({}, input); assert.equal(calls, 2)   // 입력 중엔 무시
+    await key({ metaKey: true }); assert.equal(calls, 2)            // 다른 조합은 무시
+    for (mode of ['false', 'throw']) { await wait(180); await key() }
     assert.equal(warnings, 2)
     let resolveSave
     h.form.set = () => { calls++; return new Promise((resolve) => { resolveSave = resolve }) }
-    await key(); const pendingCalls = calls
-    await key('keyup'); await key(); assert.equal(calls, pendingCalls)
+    await wait(180); await key(); const pendingCalls = calls
+    await wait(180); await key(); assert.equal(calls, pendingCalls)   // 저장 중엔 무시
     resolveSave(true); await new Promise((resolve) => setImmediate(resolve))
-    await key(); assert.equal(calls, pendingCalls + 1)
+    await wait(180); await key(); assert.equal(calls, pendingCalls + 1)
     resolveSave(true); await new Promise((resolve) => setImmediate(resolve))
     ctx.dispose()
-    await key('keyup'); h.dom.window.dispatchEvent(new h.dom.window.Event('blur'))
-    await key(); assert.equal(calls, pendingCalls + 1)
+    await wait(180); await key(); assert.equal(calls, pendingCalls + 1)
     assert.equal(h.dom.window.__dscSleep, undefined)
   } finally { h.dom.window.close() }
 })
